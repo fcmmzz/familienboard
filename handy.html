@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Einkauf">
+<meta name="theme-color" content="#03050c">
+<title>Familienboard Handy</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap">
+<style>
+  :root { --t: #E6EDFF; --m: #8C9AC0; --line: rgba(140, 160, 220, .16); --gelb: 251, 191, 36; --orange: 251, 146, 60; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #03050c; color: var(--t); font: 17px/1.35 Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; background: radial-gradient(120% 60% at 80% 0%, #120c2a 0%, #060a1c 45%, #03050c 100%) fixed;
+         padding: calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 24px); -webkit-tap-highlight-color: transparent; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  h1 { font: 700 15px Rajdhani, Inter, sans-serif; letter-spacing: .2em; text-transform: uppercase; color: #9FB4E8; margin: 4px 0 12px; display: flex; align-items: center; gap: 10px; }
+  h1 .st { margin-left: auto; font: 500 12px Inter, sans-serif; letter-spacing: 0; text-transform: none; color: var(--m); }
+  h1 .st.err { color: #F87171; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tabs button { flex: 1; font: 700 15px Rajdhani, Inter, sans-serif; letter-spacing: .1em; text-transform: uppercase; padding: 10px 6px; border-radius: 12px;
+                 border: 1.5px solid rgba(140, 160, 220, .3); background: transparent; color: var(--m); }
+  .tabs button.on { color: #fff; border-color: rgb(var(--a)); background: rgba(var(--a), .18); box-shadow: 0 0 14px rgba(var(--a), .35); }
+  .card { --a: var(--gelb); border-radius: 16px; overflow: hidden; border: 1.5px solid rgba(var(--a), .55);
+          background: linear-gradient(180deg, rgba(14, 22, 50, .9), rgba(6, 10, 26, .94)); box-shadow: 0 0 16px rgba(var(--a), .2), inset 0 0 22px rgba(var(--a), .05); }
+  .add { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid rgba(var(--a), .25); background: linear-gradient(90deg, rgba(var(--a), .16), rgba(var(--a), .03)); }
+  input { font: 17px Inter, sans-serif; color: #fff; background: #060a1c; border: 1px solid rgba(140, 160, 220, .35); border-radius: 12px; padding: 12px 14px; width: 100%; min-width: 0; color-scheme: dark; }
+  input:focus { outline: none; border-color: rgb(var(--a)); }
+  .plus { flex: none; width: 48px; border-radius: 12px; border: 1.5px solid rgb(var(--a)); background: rgba(var(--a), .22); color: #fff; font: 400 28px/1 Inter, sans-serif; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 13px 12px; border-top: 1px solid var(--line); min-height: 52px; }
+  .row:first-child { border-top: 0; }
+  .ck { width: 26px; height: 26px; border-radius: 7px; border: 2px solid rgb(var(--a)); flex: none; display: flex; align-items: center; justify-content: center; }
+  .done .ck { background: rgb(var(--a)); }
+  .done .tx { text-decoration: line-through; color: var(--m); }
+  .tx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .x { flex: none; width: 34px; height: 34px; border: 0; background: transparent; color: #56617f; font-size: 22px; border-radius: 8px; }
+  .leer { padding: 18px 14px; color: var(--m); font-style: italic; }
+  .sub { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; font-size: 14px; color: var(--m); border-top: 1px solid var(--line); }
+  .sub button { font: 600 14px Inter, sans-serif; color: rgb(var(--a)); background: transparent; border: 0; padding: 6px 0; }
+  .day { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); }
+  .day:first-child { border-top: 0; }
+  .day b { font: 700 15px Rajdhani, sans-serif; letter-spacing: .08em; color: var(--m); }
+  .day.heute b { color: rgb(var(--orange)); }
+  .day input { padding: 10px 12px; font-size: 16px; }
+  .hint { font-size: 14px; color: var(--m); margin: 12px 2px; }
+  .setup p { margin: 12px; color: #A9B4D6; }
+  .setup .add { border: 0; background: none; padding: 0 12px 14px; }
+  .main { flex: none; font: 600 16px Inter, sans-serif; padding: 0 16px; border-radius: 12px; border: 0; background: rgb(56, 189, 248); color: #04121f; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span>Familienboard</span><span class="st" id="st"></span></h1>
+
+  <div id="setup" class="card setup hidden" style="--a: 56, 189, 248">
+    <p><b>Einmal einrichten:</b> Den Daten-Link einfügen. Er steht am iPad im Board unter Zahnrad → „Daten-Link“.</p>
+    <div class="add"><input id="link" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocapitalize="off" autocomplete="off"><button class="main" id="linkOk">OK</button></div>
+  </div>
+
+  <div id="app" class="hidden">
+    <div class="tabs">
+      <button data-tab="notes" class="on" style="--a: var(--gelb)">Einkauf</button>
+      <button data-tab="meals" style="--a: var(--orange)">Essensplan</button>
+    </div>
+
+    <div id="notes" class="card">
+      <form class="add" id="addForm"><input id="neu" placeholder="z. B. Milch, Windeln …" autocomplete="off" enterkeyhint="send"><button class="plus" aria-label="Hinzufügen">+</button></form>
+      <div id="list"></div>
+      <div class="sub hidden" id="doneBar"><span id="doneTxt"></span><button id="clear">Erledigte weg</button></div>
+    </div>
+
+    <div id="meals" class="card hidden" style="--a: var(--orange)"></div>
+    <p class="hint">Änderungen ohne Netz werden gemerkt und gesendet, sobald wieder Empfang da ist.</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* Familienboard – Handy-Seite. Teilt Notizzettel und Essensplan mit dem iPad über das Daten-Skript.
+   Einrichten per Link: handy.html?daten=DATEN-LINK (der Link bleibt in der Adresse, damit
+   „Zum Home-Bildschirm“ ihn mitnimmt). Den fertigen Link zeigt das Board unter Zahnrad. */
+var TZ = 'Europe/Berlin', WT2 = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+var MEM = {};
+var store = {
+  get: function (k, d) { try { var v = localStorage.getItem('fbh_' + k); return v == null ? d : JSON.parse(v); } catch (e) { return k in MEM ? MEM[k] : d; } },
+  set: function (k, v) { MEM[k] = v; try { localStorage.setItem('fbh_' + k, JSON.stringify(v)); } catch (e) {} }
+};
+var DTF = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+function today() { return DTF.format(new Date()); }
+function k2d(k) { var a = k.split('-'); return new Date(Date.UTC(+a[0], +a[1] - 1, +a[2], 12)); }
+function addDays(k, n) { var d = k2d(k); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function hm(ms) { return new Intl.DateTimeFormat('de-DE', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(ms)); }
+
+(function urlSetup() {
+  try { var q = new URLSearchParams(location.search).get('daten'); if (q) store.set('link', q); } catch (e) {}
+})();
+function link() { return store.get('link', ''); }
+
+/* ---------- Daten und Abgleich (gleiche Logik wie im Board und im Daten-Skript) */
+function state() { return store.get('state', { notes: [], dinners: {} }); }
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function applyOp(st, o) {
+  var t = String(o.text || '').trim().slice(0, 200);
+  if (o.op === 'add') { if (t && !st.notes.some(function (x) { return x.id === o.id; })) st.notes.unshift({ id: o.id, text: t, done: false }); }
+  else if (o.op === 'toggle') st.notes.forEach(function (x) { if (x.id === o.id) { x.done = !!o.done; x.doneAt = o.done ? Date.now() : 0; } });
+  else if (o.op === 'del') st.notes = st.notes.filter(function (x) { return x.id !== o.id; });
+  else if (o.op === 'clear') st.notes = st.notes.filter(function (x) { return !x.done; });
+  else if (o.op === 'dinner' && /^\d{4}-\d\d-\d\d$/.test(o.key)) { if (t) st.dinners[o.key] = t; else delete st.dinners[o.key]; }
+}
+function doOp(o) {
+  var st = state(); applyOp(st, o); store.set('state', st);
+  var q = store.get('queue', []); q.push(o); store.set('queue', q);
+  render(); syncSoon();
+}
+var busy = false, timer = 0, retryT = 0, S = { at: store.get('at', 0), err: '' };
+function syncSoon() { clearTimeout(timer); timer = setTimeout(sync, 250); }
+function sync() {
+  var l = link();
+  if (!l || busy) return;
+  var q = store.get('queue', []), n = q.length;
+  busy = true;
+  (n ? fetch(l, { method: 'POST', body: JSON.stringify({ ops: q }) }) : fetch(l + (l.indexOf('?') > -1 ? '&' : '?') + 'a=get', { cache: 'no-store' }))
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j || !j.ok) { S.err = (j && j.error) || 'Fehler'; return; }
+      var rest = store.get('queue', []).slice(n), st = { notes: j.notes || [], dinners: j.dinners || {} };
+      rest.forEach(function (o) { applyOp(st, o); });
+      store.set('queue', rest); store.set('state', st);
+      S.at = Date.now(); S.err = ''; store.set('at', S.at);
+      if (rest.length) syncSoon();
+    }, function () {
+      S.err = 'offline';
+      if (!retryT) retryT = setTimeout(function () { retryT = 0; sync(); }, 20000);
+    })
+    .then(function () { busy = false; render(); }, function () { busy = false; });
+}
+
+/* ---------- Darstellung */
+var TAB = store.get('tab', 'notes'), editing = false;
+function render() {
+  var l = link();
+  $('setup').className = l ? 'card setup hidden' : 'card setup';
+  $('app').className = l ? '' : 'hidden';
+  if (!l) return;
+  var q = store.get('queue', []).length, st = $('st');
+  st.className = 'st' + (S.err ? ' err' : '');
+  st.textContent = S.err ? (S.err === 'offline' ? 'offline' : S.err) + (q ? ' · ' + q + ' wartet' : '') : S.at ? 'synchron · ' + hm(S.at) : 'verbinde …';
+  Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === TAB); });
+  $('notes').classList.toggle('hidden', TAB !== 'notes');
+  $('meals').classList.toggle('hidden', TAB !== 'meals');
+  var s = state(), open = s.notes.filter(function (x) { return !x.done; }), done = s.notes.filter(function (x) { return x.done; });
+  $('list').innerHTML = open.concat(done).map(function (x) {
+    return '<div class="row' + (x.done ? ' done' : '') + '" data-id="' + esc(x.id) + '"><span class="ck">' +
+      (x.done ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B1020" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>' : '') +
+      '</span><span class="tx">' + esc(x.text) + '</span><button class="x" data-del="' + esc(x.id) + '" aria-label="Löschen">×</button></div>';
+  }).join('') || '<div class="leer">Noch nichts auf dem Zettel.</div>';
+  $('doneBar').classList.toggle('hidden', !done.length);
+  $('doneTxt').textContent = done.length + ' erledigt';
+  if (!editing) {
+    var t = today(), rows = '';
+    for (var i = 0; i < 7; i++) {
+      var k = addDays(t, i), g = k2d(k).getUTCDay(), wd = WT2[g === 0 ? 6 : g - 1];
+      rows += '<div class="day' + (i === 0 ? ' heute' : '') + '"><b>' + (i === 0 ? 'HEUTE' : wd.toUpperCase() + ' ' + k2d(k).getUTCDate() + '.') + '</b>' +
+        '<input data-key="' + k + '" value="' + esc(s.dinners[k] || '') + '" placeholder="' + (i === 0 ? 'Was gibt’s heute?' : 'Essen?') + '" enterkeyhint="done" autocomplete="off"></div>';
+    }
+    $('meals').innerHTML = rows;
+  }
+}
+
+/* ---------- Bedienung */
+$('addForm').onsubmit = function (e) {
+  e.preventDefault();
+  var v = $('neu').value.trim();
+  if (v) doOp({ op: 'add', id: newId(), text: v });
+  $('neu').value = ''; $('neu').focus();   // Tastatur bleibt offen: gleich das Nächste eintippen
+};
+$('list').onclick = function (e) {
+  var del = e.target.closest('[data-del]');
+  if (del) { doOp({ op: 'del', id: del.getAttribute('data-del') }); return; }
+  var r = e.target.closest('[data-id]');
+  if (!r) return;
+  var x = state().notes.filter(function (n) { return n.id === r.getAttribute('data-id'); })[0];
+  if (x) doOp({ op: 'toggle', id: x.id, done: !x.done });
+};
+$('clear').onclick = function () { doOp({ op: 'clear' }); };
+Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+  b.onclick = function () { TAB = b.getAttribute('data-tab'); store.set('tab', TAB); render(); };
+});
+$('meals').addEventListener('focusin', function () { editing = true; });
+$('meals').addEventListener('focusout', function (e) {
+  editing = !!(e.relatedTarget && $('meals').contains(e.relatedTarget));   // gleich ins nächste Feld: Liste nicht neu zeichnen
+  var inp = e.target, k = inp.getAttribute('data-key');
+  if (!k) return;
+  var v = inp.value.trim(), old = state().dinners[k] || '';
+  if (v !== old) doOp({ op: 'dinner', key: k, text: v }); else render();
+});
+$('meals').addEventListener('keydown', function (e) { if (e.key === 'Enter') e.target.blur(); });
+$('linkOk').onclick = function () {
+  var v = $('link').value.trim();
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(v)) { alert('Das sieht nicht wie der Daten-Link aus (beginnt mit https://script.google.com/…).'); return; }
+  location.replace(location.pathname + '?daten=' + encodeURIComponent(v));   // Link in die Adresse, damit der Home-Bildschirm ihn kennt
+};
+
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(function () {});
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') sync(); });
+window.addEventListener('online', sync);
+setInterval(function () { if (document.visibilityState === 'visible') sync(); }, 20000);
+render(); sync();
+</script>
+</body>
+</html>

@@ -349,6 +349,7 @@ var SET = store.get('settings', {});
     if (q.get('kalender')) { SET.kalender = q.get('kalender'); ch = true; }
     if (q.get('tanken')) { SET.tkKey = q.get('tanken'); ch = true; }
     if (q.get('sorte')) { SET.sorte = q.get('sorte'); ch = true; }
+    if (q.get('daten')) { SET.daten = q.get('daten'); ch = true; }
     if (ch) store.set('settings', SET);   // Parameter bleiben in der Adresse, damit 'Zum Home-Bildschirm' sie mitnimmt
   } catch (e) {}
 })();
@@ -356,6 +357,12 @@ function calLink() { return SET.kalender || CONFIG.KALENDER_LINK; }
 function tkKey() { return SET.tkKey || CONFIG.TANKERKOENIG_KEY; }
 function sorte() { return SET.sorte || CONFIG.TANKEN.sorte; }
 function demoOn() { return VORSCHAU || SET.demo !== false; }
+function dataLink() { return VORSCHAU ? '' : SET.daten || ''; }
+var RETRY = {};
+function retry(name, fn, ms) {   // genau EINE Wiederholung pro Quelle (sonst stapeln sich nachts ohne WLAN die Versuche)
+  if (RETRY[name]) return;
+  RETRY[name] = setTimeout(function () { RETRY[name] = 0; fn(); }, ms);
+}
 function ort() { return SET.ort || CONFIG.ORT; }
 function hasOrt() { var o = ort(); return o && o.lat != null && o.lon != null; }
 function kindName() { return (SET.namen && SET.namen.kind) || CONFIG.KIND_NAME; }
@@ -546,8 +553,17 @@ function loadWeather() {
              max: Math.round(j.daily.temperature_2m_max[0]), min: Math.round(j.daily.temperature_2m_min[0]),
              sunrise: j.daily.sunrise[0], sunset: j.daily.sunset[0], hourly: hourly,
              daily: j.daily.time.map(function (d, i) { return { key: d, code: j.daily.weather_code[i], max: Math.round(j.daily.temperature_2m_max[i]), min: Math.round(j.daily.temperature_2m_min[i]), pop: j.daily.precipitation_probability_max[i] || 0 }; }) };
-    S.wxDemo = false; render();
-  }).catch(function () { if (!S.wx && demoOn()) { S.wx = demoWeather(); S.wxDemo = true; render(); } setTimeout(loadWeather, 60000); });
+    S.wxDemo = false; S.wxAt = Date.now(); render();
+    store.set('cacheWx', { at: S.wxAt, lat: o.lat, wx: S.wx });
+  }).catch(function () { if (!S.wx && demoOn()) { S.wx = demoWeather(); S.wxDemo = true; render(); } retry('wx', loadWeather, 60000); });
+}
+function restoreCache() {   // letzte gute Daten, damit das Board nach einem Neustart ohne WLAN nicht leer ist
+  var now = Date.now(), c = store.get('cacheWx', null);
+  if (c && c.wx && now - c.at < 18 * 3600e3 && hasOrt() && c.lat === ort().lat) { S.wx = c.wx; S.wxAt = c.at; }
+  c = store.get('cacheCal', null);
+  if (c && c.ev && now - c.at < 3 * 864e5 && c.link === calLink()) { S.cal = c.ev; S.calAt = c.at; }
+  c = store.get('cacheTv', null);
+  if (c && c.tv && now - c.at < 864e5 && CONFIG.REALITY.an) { S.tv = c.tv; S.tvAt = c.at; }
 }
 function hourlyFrom(nowKey, h) { var id = nowKey + 'T' + pad(h) + ':00'; return (S.wx.hourly || []).filter(function (x) { return x.t >= id; }); }
 function hoursOf(key, from, to) { return (S.wx.hourly || []).filter(function (x) { var hh = +x.t.substr(11, 2); return x.t.indexOf(key) === 0 && hh >= from && hh <= to; }); }
@@ -557,10 +573,10 @@ function loadCalendar() {
   var link = calLink();
   if (VORSCHAU || !link) { S.cal = demoOn() ? demoCalendar() : []; S.calDemo = demoOn(); render(); return; }
   fetch(link + (link.indexOf('?') > -1 ? '&' : '?') + 'format=json').then(function (r) { return r.json(); }).then(function (j) {
-    if (j && j.ok) { S.cal = j.events || []; S.calAt = Date.now(); S.calErr = ''; S.calDemo = false; }
+    if (j && j.ok) { S.cal = j.events || []; S.calAt = Date.now(); S.calErr = ''; S.calDemo = false; store.set('cacheCal', { at: S.calAt, link: link, ev: S.cal }); }
     else S.calErr = (j && j.error) || 'Fehler';
     render();
-  }).catch(function () { S.calErr = 'offline'; render(); setTimeout(loadCalendar, 60000); });
+  }).catch(function () { S.calErr = 'offline'; render(); retry('cal', loadCalendar, 60000); });
 }
 
 /* ----------------------------------------------------------------- Sprit (Tankerkönig) */
@@ -585,6 +601,49 @@ function loadFuel() {
 /* ----------------------------------------------------------------- Notizen und Essensplan (auf dem iPad) */
 function notes() { return store.get('notes', []); }
 function setNotes(n) { store.set('notes', n); }
+
+/* ----------------------------------------------------------------- Abgleich mit dem Handy (Daten-Skript, siehe daten-skript.gs) */
+// Notizzettel und Essensplan liegen zusätzlich im Daten-Skript. Jede Änderung ist ein kleiner Auftrag (op):
+// Er wirkt sofort hier und wird gesendet, sobald Netz da ist. Ohne Netz wartet er in einer Warteschlange.
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function applyOp(st, o) {   // gleiche Logik wie im Daten-Skript und in handy.html
+  var t = String(o.text || '').trim().slice(0, 200);
+  if (o.op === 'add') { if (t && !st.notes.some(function (x) { return x.id === o.id; })) st.notes.unshift({ id: o.id, text: t, done: false }); }
+  else if (o.op === 'toggle') st.notes.forEach(function (x) { if (x.id === o.id) { x.done = !!o.done; x.doneAt = o.done ? Date.now() : 0; } });
+  else if (o.op === 'del') st.notes = st.notes.filter(function (x) { return x.id !== o.id; });
+  else if (o.op === 'clear') st.notes = st.notes.filter(function (x) { return !x.done; });
+  else if (o.op === 'dinner' && /^\d{4}-\d\d-\d\d$/.test(o.key)) { if (t) st.dinners[o.key] = t; else delete st.dinners[o.key]; }
+}
+function doOp(o) {
+  var st = { notes: notes(), dinners: dinners() };
+  applyOp(st, o); setNotes(st.notes); store.set('dinners', st.dinners);
+  if (dataLink()) { var q = store.get('syncQ', []); q.push(o); store.set('syncQ', q); syncSoon(); }
+}
+function syncSeed() {   // beim Verbinden: was schon auf dem iPad steht, ins Daten-Skript übernehmen
+  var q = store.get('syncQ', []), today = parts(Date.now()).key, d = dinners();
+  notes().slice().reverse().forEach(function (x) { q.push({ op: 'add', id: x.id, text: x.text }); if (x.done) q.push({ op: 'toggle', id: x.id, done: true }); });
+  Object.keys(d).forEach(function (k) { if (k >= today) q.push({ op: 'dinner', key: k, text: d[k] }); });
+  store.set('syncQ', q);
+}
+var syncBusy = false, syncTimer = 0;
+function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 300); }
+function syncNow() {
+  var link = dataLink();
+  if (!link || syncBusy) return;
+  var q = store.get('syncQ', []), n = q.length;
+  syncBusy = true;
+  (n ? fetch(link, { method: 'POST', body: JSON.stringify({ ops: q }) }) : fetch(link + (link.indexOf('?') > -1 ? '&' : '?') + 'a=get'))
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (!j || !j.ok) { S.syncErr = (j && j.error) || 'Fehler'; return; }
+      var rest = store.get('syncQ', []).slice(n), st = { notes: j.notes || [], dinners: j.dinners || {} };
+      rest.forEach(function (o) { applyOp(st, o); });   // was während der Anfrage dazukam, bleibt erhalten
+      store.set('syncQ', rest); setNotes(st.notes); store.set('dinners', st.dinners);
+      S.syncAt = Date.now(); S.syncErr = '';
+      if (rest.length) syncSoon();
+    }, function () { S.syncErr = 'offline'; retry('sync', syncNow, 60000); })
+    .then(function () { syncBusy = false; render(); }, function () { syncBusy = false; });
+}
 function dinners() { return store.get('dinners', {}); }
 function dinnerFor(key) {
   var d = dinners();
@@ -694,8 +753,9 @@ function loadTV() {
     urls.push('https://api.tvmaze.com/schedule?country=DE&date=' + d);
   });
   Promise.all(urls.map(function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return null; }); })).then(function (res) {
-    if (res.every(function (r) { return r === null; })) { if (!S.tv && demoOn()) { S.tv = demoTV(); S.tvDemo = true; render(); } setTimeout(loadTV, 5 * 60000); return; }
+    if (res.every(function (r) { return r === null; })) { if (!S.tv && demoOn()) { S.tv = demoTV(); S.tvDemo = true; render(); } retry('tv', loadTV, 5 * 60000); return; }
     S.tv = tvParse(res.map(function (r, i) { return { web: i % 2 === 0, list: r }; })); S.tvDemo = false; S.tvAt = Date.now(); render();
+    store.set('cacheTv', { at: S.tvAt, tv: S.tv });
   });
 }
 function demoTV() {
@@ -784,9 +844,13 @@ function renderCountdown(p) {
 
 function tempColor(t) { return t <= 0 ? '#A5C8FF' : t <= 8 ? '#38BDF8' : t <= 16 ? '#2DD4BF' : t <= 24 ? '#FBBF24' : '#FB923C'; }
 function renderWx(p) {
-  var w = S.wx, el = $('wx'), on = hasOrt();
-  var head = hd(svg('sun', '#38BDF8', 18), 'Wetter heute', (on ? esc(ort().name) : '<span class="act tap" data-act="settings">Ort eintragen</span>') + (S.wxDemo ? ' · <span class="demo">Beispiel</span>' : ''));
-  if (!w || !w.hourly) { el.innerHTML = head + '<div class="bd muted">' + (on ? 'Wetter wird geladen …' : 'Ort über das Zahnrad eintragen.') + '</div>'; return; }
+  var w0 = S.wx, el = $('wx'), on = hasOrt(), stale = !S.wxDemo && S.wxAt && Date.now() - S.wxAt > 90 * 60000;
+  var head = hd(svg('sun', '#38BDF8', 18), 'Wetter heute', (on ? esc(ort().name) : '<span class="act tap" data-act="settings">Ort eintragen</span>') +
+    (S.wxDemo ? ' · <span class="demo">Beispiel</span>' : stale ? ' · <span style="color: #FBBF24">Stand ' + hm(S.wxAt) + '</span>' : ''));
+  if (!w0 || !w0.hourly) { el.innerHTML = head + '<div class="bd muted">' + (on ? 'Wetter wird geladen …' : 'Ort über das Zahnrad eintragen.') + '</div>'; return; }
+  // Gemerkte (ältere) Daten: aktuelle Werte aus der Stundenvorhersage und Max/Min von HEUTE nehmen
+  var cur = stale ? hourlyFrom(p.key, p.h)[0] : null, td = (w0.daily || []).filter(function (d) { return d.key === p.key; })[0];
+  var w = { temp: cur ? Math.round(cur.temp) : w0.temp, code: cur ? cur.code : w0.code, isDay: cur ? cur.isDay : w0.isDay, max: td ? td.max : w0.max, min: td ? td.min : w0.min };
   var hrs = hourlyFrom(p.key, Math.min(23, p.h + 1)), pick = [];
   for (var i = 0; i < hrs.length && pick.length < 6; i += 2) pick.push(hrs[i]);
   var temps = pick.map(function (x) { return x.temp; }), lo = Math.min.apply(null, temps) - 1, hi = Math.max.apply(null, temps) + 1;
@@ -952,7 +1016,11 @@ function renderNotes() {
   }).join('');
   if (!list.length) items = '<div class="muted" style="font-size: 14px; font-style: italic">Tippe auf +, um etwas aufzuschreiben – Einkauf, Erinnerungen, Kita-Zettel …</div>';
   if (list.length > max) items += '<div class="muted tap" data-act="notes-all" style="font-size: 13px; padding-top: 4px">+ ' + (list.length - max) + ' weitere · alle zeigen</div>';
-  $('notes').innerHTML = hd(svg('notiz', '#FBBF24', 18), 'Notizzettel', done.length ? '<span class="act tap" data-act="notes-clear">Erledigte weg</span>' : '',
+  var q = dataLink() ? store.get('syncQ', []).length : 0;
+  var sy = !dataLink() ? '' : S.syncErr ? '<span style="color: #F87171">' + (S.syncErr === 'offline' ? 'offline' : esc(S.syncErr)) + (q ? ' · ' + q + ' wartet' : '') + '</span>'
+    : S.syncAt ? '<span>mit Handy · ' + hm(S.syncAt) + '</span>' : '<span>verbinde …</span>';
+  var meta = [sy, done.length ? '<span class="act tap" data-act="notes-clear">Erledigte weg</span>' : ''].filter(Boolean).join(' · ');
+  $('notes').innerHTML = hd(svg('notiz', '#FBBF24', 18), 'Notizzettel', meta,
     '<button class="plus tap" data-act="note-add" aria-label="Notiz hinzufügen">+</button>') + '<div class="bd">' + items + '</div>';
 }
 
@@ -1071,9 +1139,10 @@ function textDialog(o) {
 }
 function addNote() {
   textDialog({ title: 'Neue Notiz', placeholder: 'z. B. Windeln kaufen', onSave: function (v) {
-    var n = notes(); n.unshift({ id: Date.now().toString(36), text: v, done: false }); setNotes(n);
+    doOp({ op: 'add', id: newId(), text: v });
   } });
 }
+function toggleNote(id) { var x = notes().filter(function (n) { return n.id === id; })[0]; if (x) doOp({ op: 'toggle', id: id, done: !x.done }); }
 function notesDialog() {
   function draw() {
     var n = notes();
@@ -1086,10 +1155,10 @@ function notesDialog() {
     draw();
     $('nList').onclick = function (ev) {
       var r = ev.target.closest('[data-id]'); if (!r) return;
-      var n = notes(); n.forEach(function (x) { if (x.id === r.getAttribute('data-id')) { x.done = !x.done; x.doneAt = x.done ? Date.now() : 0; } }); setNotes(n); draw();
+      toggleNote(r.getAttribute('data-id')); draw();
     };
     $('nOk').onclick = closeDlg;
-    $('nClr').onclick = function () { setNotes(notes().filter(function (x) { return !x.done; })); draw(); };
+    $('nClr').onclick = function () { doOp({ op: 'clear' }); draw(); };
   });
 }
 function foodDialog(id) {
@@ -1201,8 +1270,8 @@ function editDinner(key) {
   var d = dinners();
   var use = foodSorted().filter(function (x) { return x.bis <= addDays(key, 1); }).map(function (x) { return esc(x.name); }).join(', ');
   textDialog({ title: 'Abendessen', text: longDate(key) + (use ? '<br>Bald verwerten: <b>' + use + '</b>' : ''), value: d[key] || '', placeholder: 'z. B. Kürbissuppe',
-    onSave: function (v) { var x = dinners(); x[key] = v; store.set('dinners', x); },
-    onDelete: d[key] ? function () { var x = dinners(); delete x[key]; store.set('dinners', x); } : null,
+    onSave: function (v) { doOp({ op: 'dinner', key: key, text: v }); },
+    onDelete: d[key] ? function () { doOp({ op: 'dinner', key: key, text: '' }); } : null,
     extra: 'Ganze Woche einfügen', onExtra: weekDialog });
 }
 function weekDialog() {
@@ -1213,19 +1282,20 @@ function weekDialog() {
   function () {
     $('dNo').onclick = closeDlg;
     $('dOk').onclick = function () {
-      var today = parts(Date.now()).key, x = dinners(), n = 0;
+      var today = parts(Date.now()).key, ops = [], n = 0;
       $('dTa').value.split(/\n+/).forEach(function (line) {
         var m = line.trim().replace(/^[-*•\s]+/, '').match(/^(mo|di|mi|do|fr|sa|so)[a-zäöü]*\.?\s*[:,.\-–]?\s*(.+)$/i);
         if (!m) return;
         var want = WT2.map(function (w) { return w.toLowerCase(); }).indexOf(m[1].toLowerCase()) + 1;
-        for (var i = 0; i < 7; i++) { var k = addDays(today, i); if (dow(k) === want) { x[k] = m[2].replace(/\*\*/g, '').trim(); n++; break; } }
+        for (var i = 0; i < 7; i++) { var k = addDays(today, i); if (dow(k) === want) { ops.push({ op: 'dinner', key: k, text: m[2].replace(/\*\*/g, '').trim() }); n++; break; } }
       });
       if (!n) { $('dMsg').textContent = 'Keine Zeile erkannt. Beginnt jede Zeile mit Mo, Di, Mi …?'; return; }
-      store.set('dinners', x); closeDlg();
+      ops.forEach(doOp); closeDlg();
     };
     $('dTa').focus();
   });
 }
+function handyLink() { return location.href.split(/[?#]/)[0].replace(/[^\/]*$/, '') + 'handy.html?daten=' + encodeURIComponent(SET.daten || ''); }
 function settingsDialog() {
   var s = sorte(), nm = SET.namen || {}, o = SET.ort;
   function nameIn(id, k, ph) {
@@ -1240,6 +1310,8 @@ function settingsDialog() {
     '<label>Ort für Wetter und Tankstellen (Name oder PLZ)</label><input id="sOrt" value="' + esc(o ? o.q || o.name : '') + '" placeholder="z. B. 93047" autocomplete="off">' +
     '<p class="hint">' + (o ? 'Gefunden: ' + esc(o.name) + (o.info ? ', ' + esc(o.info) : '') : 'Noch kein Ort eingetragen.') + '</p>' +
     '<label>Kalender-Link (aus dem Apps-Script, endet auf <b>?k=…</b>)</label><input id="sCal" value="' + esc(SET.kalender || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
+    '<label>Daten-Link (Notizzettel und Essensplan mit dem Handy teilen, aus dem Daten-Skript)</label><input id="sDat" value="' + esc(SET.daten || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
+    (SET.daten ? '<p class="hint">Handy-Link (am Handy öffnen, dann „Zum Home-Bildschirm“):</p><input id="sHandy" readonly value="' + esc(handyLink()) + '" style="font-size: 13px">' : '') +
     '<label>Tankerkönig-API-Schlüssel</label><input id="sTk" value="' + esc(SET.tkKey || '') + '" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" autocapitalize="off">' +
     '<label>Sorte</label><div class="seg" id="sSorte">' + Object.keys(SORTEN).map(function (k) {
       return '<button data-s="' + k + '" class="' + (k === s ? 'on' : '') + '">' + SORTEN[k] + '</button>'; }).join('') + '</div>' +
@@ -1255,13 +1327,16 @@ function settingsDialog() {
     $('sNo').onclick = closeDlg;
     $('sNight').onclick = function () { S.nightUntil = Date.now() + 15000; closeDlg(); setTimeout(render, 15100); };
     $('sOk').onclick = function () {
-      var v = { kalender: $('sCal').value.trim(), tkKey: $('sTk').value.trim(), sorte: pick, demo: $('sDemo').checked, geburt: $('sGeb').value || '',
+      var v = { daten: $('sDat').value.trim(), kalender: $('sCal').value.trim(), tkKey: $('sTk').value.trim(), sorte: pick, demo: $('sDemo').checked, geburt: $('sGeb').value || '',
                 namen: { p1: $('sP1').value.trim(), p2: $('sP2').value.trim(), kind: $('sKind').value.trim() } };
       var q = $('sOrt').value.trim(), btn = $('sOk');
       function save(newOrt) {
+        var neu = v.daten && v.daten !== SET.daten;
         Object.keys(v).forEach(function (k) { SET[k] = v[k]; });
         if (newOrt !== undefined) { if (newOrt) SET.ort = newOrt; else delete SET.ort; }
-        store.set('settings', SET); S.fuel = null; S.fuelAt = 0; S.calErr = ''; closeDlg(); loadCalendar(); loadFuel(); loadWeather();
+        store.set('settings', SET); S.fuel = null; S.fuelAt = 0; S.calErr = ''; S.syncErr = ''; S.syncAt = 0;
+        if (neu) syncSeed();
+        closeDlg(); loadCalendar(); loadFuel(); loadWeather(); syncNow();
       }
       if (!q) return save(null);
       if (o && (o.q === q || o.name === q)) return save();
@@ -1280,9 +1355,7 @@ document.addEventListener('click', function (ev) {
   var a = t.getAttribute('data-act');
   if (a === 'note-add') addNote();
   else if (a === 'note') {
-    var id = t.getAttribute('data-id'), n = notes();
-    n.forEach(function (x) { if (x.id === id) { x.done = !x.done; x.doneAt = x.done ? Date.now() : 0; } });
-    setNotes(n); render();
+    toggleNote(t.getAttribute('data-id')); render();
   }
   else if (a === 'notes-all') notesDialog();
   else if (a === 'food-add') foodDialog();
@@ -1293,7 +1366,7 @@ document.addEventListener('click', function (ev) {
   else if (a === 'fuel') fuelDialog();
   else if (a === 'vorsorge') vorsorgeDialog(t.getAttribute('data-u'));
   else if (a === 'check') { var cd = store.get('checkDone', {}); cd[t.getAttribute('data-key')] = true; store.set('checkDone', cd); render(); }
-  else if (a === 'notes-clear') { setNotes(notes().filter(function (x) { return !x.done; })); render(); }
+  else if (a === 'notes-clear') { doOp({ op: 'clear' }); render(); }
   else if (a === 'dinner') editDinner(t.getAttribute('data-key'));
   else if (a === 'muell-done') { var md = store.get('muellDone', {}); md[t.getAttribute('data-key')] = true; store.set('muellDone', md); render(); }
   else if (a === 'settings') settingsDialog();
@@ -1380,18 +1453,31 @@ MYICONS.gear = '<path fill="currentColor" fill-rule="evenodd" d="' + gearPath() 
 $('gear').innerHTML = svg('gear', '#9FB4E8', 22);
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', function () { setTimeout(fit, 300); });
-document.addEventListener('visibilitychange', function () { wake(); if (document.visibilityState === 'visible') { loadCalendar(); loadWeather(); loadTV(); } });
+document.addEventListener('visibilitychange', function () { wake(); if (document.visibilityState === 'visible') { loadCalendar(); loadWeather(); loadTV(); syncNow(); } });
 document.addEventListener('touchend', wake, { passive: true });
-cleanup(); fit(); wake();
-loadWeather(); loadCalendar(); loadFuel(); loadTV();
+window.addEventListener('online', function () { loadWeather(); loadCalendar(); loadFuel(); loadTV(); syncNow(); });   // WLAN wieder da
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js').catch(function () {});   // hält eine Kopie des Boards, falls beim Start kein Netz da ist
+}
+cleanup(); restoreCache(); fit(); wake();
+loadWeather(); loadCalendar(); loadFuel(); loadTV(); syncNow();
+setInterval(function () { if (!isNight(parts(Date.now()).min)) syncNow(); }, 60000);
 setInterval(renderClock, 1000);
 setInterval(render, 15000);
 setInterval(loadCalendar, 5 * 60000);
 setInterval(loadWeather, 15 * 60000);
 setInterval(loadFuel, 15 * 60000);
 setInterval(loadTV, 60 * 60000);
-// einmal pro Nacht neu laden (frischer Speicher), außer ein Dialog ist offen
-setInterval(function () { var p = parts(Date.now()); if (p.h === 4 && p.mi === 0 && $('dlg').className === 'hidden') location.reload(); }, 60000);
+// einmal am Tag neu laden (frischer Speicher, neue Version) – ab 4 Uhr, aber erst, wenn das Netz da ist.
+// Ohne WLAN würde Safari sonst eine Fehlerseite zeigen und das Board stünde still.
+var LOADED_ON = parts(Date.now()).key, reloadTry = false;
+setInterval(function () {
+  var p = parts(Date.now());
+  if (p.key === LOADED_ON || p.h < 4 || reloadTry || $('dlg').className !== 'hidden' || navigator.onLine === false) return;
+  reloadTry = true;
+  fetch(location.href.split('#')[0], { method: 'HEAD', cache: 'no-store' })
+    .then(function (r) { if (r.ok) location.reload(); else reloadTry = false; }, function () { reloadTry = false; });
+}, 60000);
 </script>
 </body>
 </html>
