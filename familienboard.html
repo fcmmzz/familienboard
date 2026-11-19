@@ -189,29 +189,33 @@
    Nachbau und Anpassung von "FamilyDashboard" (github.com/stewie1308-ui/FamilyDashboard,
    MIT-Lizenz, (c) 2026 stewie1308-ui). Wetter- und Haus-Symbole stammen aus diesem Projekt.
 
-   Alles, was ihr anpassen wollt, steht in CONFIG. Kalender-Link und Tankerkönig-Schlüssel
-   tragt ihr am besten direkt am iPad ein (Zahnrad oben rechts), dann landen sie nie in der Datei.
+   Alles, was ihr anpassen wollt, steht in CONFIG. PERSÖNLICHES (Namen, Geburtstag des Kindes, Ort,
+   Kalender-Link, Tankerkönig-Schlüssel) gehört NICHT in diese Datei – das Repo ist öffentlich.
+   Das tragt ihr am iPad ein (Zahnrad oben rechts); es wird nur dort gespeichert.
    ===================================================================================== */
 var CONFIG = {
-  // Wetter und Tankstellen-Suche
-  ORT: { name: 'Pfreimd', lat: 49.4945, lon: 12.1817 },
+  // Wetter und Tankstellen-Suche. Leer lassen und am iPad eintragen (Zahnrad → Ort).
+  ORT: { name: '', lat: null, lon: null },
 
-  // Wer im Kalender vorkommt (Farbe = Leuchtfarbe in den Terminen)
-  // Die Schlüssel (marco, lena, familie, kind) müssen zu "wer" im Kalender-Skript passen.
+  // Wer im Kalender vorkommt (Farbe = Leuchtfarbe in den Terminen). Die Namen kommen vom iPad (Zahnrad).
+  // "wer" im Kalender-Skript darf der Schlüssel sein (p1, p2, familie, kind) oder der Vorname,
+  // der am iPad eingetragen ist (z. B. wer: "anna" → Person, die am iPad "Anna" heißt).
   PERSONEN: {
-    marco:   { name: 'Marco',      farbe: '#38BDF8', kuerzel: 'M' },
-    lena:    { name: 'Lena',       farbe: '#F472B6', kuerzel: 'L' },
+    p1:      { name: 'Person 1',   farbe: '#38BDF8' },
+    p2:      { name: 'Person 2',   farbe: '#F472B6' },
     familie: { name: 'Familie',    farbe: '#FBBF24', icon: 'haus' },
     kind:    { name: 'Der Kleine', farbe: '#4ADE80', icon: 'ente' }
   },
 
-  // Anzieh-Tipp fürs Kind (aus der Wettervorhersage). Name leer lassen = "Für den Kleinen"
+  // Anzieh-Tipp fürs Kind (aus der Wettervorhersage)
   KIND_TIPP: true,
+  // Name und Geburtstag des Kindes am iPad eintragen (Zahnrad). Der Geburtstag steuert die
+  // Vorsorge-Erinnerung (U7, U7a …) und den Geburtstag im Countdown.
   KIND_NAME: '',
-  KIND_GEBURT: '2025-04-11',          // für die Vorsorge-Erinnerung (U7, U7a …) und den Geburtstag im Countdown
+  KIND_GEBURT: '',
   VORSORGE: true,
 
-  // MÜLL – Abfuhrkalender 2026, 92536 Pfreimd, Nabburger Straße (Landkreis Schwandorf, Firma Lober)
+  // MÜLL – Abfuhrkalender 2026 eures Abfuhrbezirks
   //   termine     = feste Tage aus dem Kalender (werden nie verschoben)
   //   start + alleWochen + rhythmusAb = Fortschreibung des Rhythmus, solange der neue Kalender fehlt
   //   2027 ist VORLÄUFIG. Sobald der Abfuhrkalender 2027 da ist, die Termine 2027 eintragen.
@@ -238,7 +242,7 @@ var CONFIG = {
   MUELL_AUSNAHMEN: {},                // einzelne Änderungen: { '2026-12-25': '2026-12-28' }, '' = fällt aus
   MUELL_ERINNERUNG_AB: '16:00',       // ab wann am Vorabend "rausstellen" erscheint
   // Öffnungszeiten laut Abfuhrkalender 2026 (Wochentag: 1 = Mo … 6 = Sa). An Feiertagen ausgeblendet.
-  WERTSTOFFHOF: { name: 'Recyclinghof Pfreimd', ort: 'Naabweg (Bauhof)', zeiten: { 3: ['13:00', '16:00'], 6: ['9:00', '12:00'] } },
+  WERTSTOFFHOF: { name: 'Recyclinghof', zeiten: { 3: ['13:00', '16:00'], 6: ['9:00', '12:00'] } },
 
   // ISS MICH ZUERST – Kühlschrank-Check an diesem Wochentag (6 = Samstag); am ersten im Monat mit Vorratsregal
   KUEHLSCHRANK_CHECK: { wochentag: 6 },
@@ -258,7 +262,7 @@ var CONFIG = {
     { titel: 'Heiligabend', datum: '12-24' },
     { titel: 'Silvester',   datum: '12-31' }
   ],
-  MARIAE_HIMMELFAHRT: true,           // 15. August ist in Nabburg Feiertag (überwiegend katholisch)
+  MARIAE_HIMMELFAHRT: true,           // 15. August: Feiertag in Gemeinden mit überwiegend katholischer Bevölkerung
 
   // Spritpreise (Tankerkönig, kostenloser Schlüssel: creativecommons.tankerkoenig.de)
   TANKEN: { sorte: 'diesel', radiusKm: 8, anzahl: 3 },   // sorte: 'diesel' | 'e5' | 'e10'
@@ -352,6 +356,28 @@ function calLink() { return SET.kalender || CONFIG.KALENDER_LINK; }
 function tkKey() { return SET.tkKey || CONFIG.TANKERKOENIG_KEY; }
 function sorte() { return SET.sorte || CONFIG.TANKEN.sorte; }
 function demoOn() { return VORSCHAU || SET.demo !== false; }
+function ort() { return SET.ort || CONFIG.ORT; }
+function hasOrt() { var o = ort(); return o && o.lat != null && o.lon != null; }
+function kindName() { return (SET.namen && SET.namen.kind) || CONFIG.KIND_NAME; }
+function kindGeburt() { return SET.geburt || CONFIG.KIND_GEBURT; }
+function personen() {   // CONFIG.PERSONEN mit den Namen vom iPad
+  var n = SET.namen || {}, out = {};
+  Object.keys(CONFIG.PERSONEN).forEach(function (k) {
+    var p = CONFIG.PERSONEN[k], o = {};
+    Object.keys(p).forEach(function (x) { o[x] = p[x]; });
+    if (n[k]) o.name = n[k];
+    out[k] = o;
+  });
+  return out;
+}
+function geocode(q) {   // Ortsname oder PLZ -> Koordinaten (Open-Meteo, ohne Schlüssel)
+  return fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=de&format=json&countryCode=DE&name=' + encodeURIComponent(q))
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      var g = j && j.results && j.results[0];
+      return g ? { name: g.name, lat: +(+g.latitude).toFixed(4), lon: +(+g.longitude).toFixed(4), info: g.admin1 || '', q: q } : null;
+    });
+}
 
 /* ----------------------------------------------------------------- Zeit (Europe/Berlin) */
 var WT = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -468,7 +494,15 @@ function binNames(list, k) { return list.map(function (b) { return (k && b.kurz)
 /* ----------------------------------------------------------------- Zustand */
 var S = { tv: null, tvDemo: false, tvAt: 0, cal: null, calDemo: false, calAt: 0, calErr: '', wx: null, wxDemo: false, fuel: null, fuelDemo: false, fuelErr: '', fuelAt: 0, peekUntil: 0, nightUntil: 0 };
 function calEvents() { return S.cal || []; }
-function person(k) { return CONFIG.PERSONEN[k] || CONFIG.PERSONEN.familie; }
+function person(k) {   // "wer" aus dem Kalender: Schlüssel (p1, kind …) oder der Vorname, der am iPad eingetragen ist
+  var all = personen(), w = String(k || '').trim().toLowerCase(), hit = null;
+  if (all[w]) return all[w];
+  Object.keys(all).forEach(function (x) {
+    var nm = all[x].name.toLowerCase();
+    if (!hit && w && (nm === w || nm.split(/\s+/)[0] === w)) hit = all[x];
+  });
+  return hit || all.familie;
+}
 
 /* ----------------------------------------------------------------- Wetter (Open-Meteo, ohne Schlüssel) */
 var WX_WORD = function (c, t) {
@@ -496,8 +530,8 @@ function isSnow(c) { return (c >= 71 && c <= 77) || c === 85 || c === 86; }
 function isIce(c) { return c === 56 || c === 57 || c === 66 || c === 67; }
 
 function loadWeather() {
-  if (VORSCHAU) { S.wx = demoWeather(); S.wxDemo = true; render(); return; }
-  var o = CONFIG.ORT;
+  if (VORSCHAU || !hasOrt()) { S.wx = demoOn() ? demoWeather() : null; S.wxDemo = !!S.wx; render(); return; }
+  var o = ort();
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + o.lat + '&longitude=' + o.lon +
     '&current=temperature_2m,weather_code,is_day' +
     '&hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,is_day' +
@@ -533,10 +567,10 @@ function loadCalendar() {
 var SORTEN = { diesel: 'Diesel', e5: 'Super E5', e10: 'Super E10' };
 function loadFuel() {
   var key = tkKey();
-  if (VORSCHAU || !key) { S.fuel = demoOn() ? demoFuel() : null; S.fuelDemo = demoOn(); render(); return; }
+  if (VORSCHAU || !key || !hasOrt()) { S.fuel = demoOn() ? demoFuel() : null; S.fuelDemo = demoOn(); render(); return; }
   var m = parts(Date.now()).min;
   if (S.fuelAt && (m < 6 * 60 || m > 22 * 60 + 30)) return;   // nachts nicht abfragen
-  var o = CONFIG.ORT, t = CONFIG.TANKEN;
+  var o = ort(), t = CONFIG.TANKEN;
   var url = 'https://creativecommons.tankerkoenig.de/json/list.php?lat=' + o.lat + '&lng=' + o.lon + '&rad=' + t.radiusKm +
     '&sort=price&type=' + sorte() + '&apikey=' + encodeURIComponent(key);
   fetch(url).then(function (r) { return r.json(); }).then(function (j) {
@@ -610,10 +644,11 @@ function foodShown(today) {
 var U_LISTE = [['U7', 21, 24], ['U7a', 34, 36], ['U8', 46, 48], ['U9', 60, 64]];
 function addMonths(key, n) { var a = key.split('-').map(Number), dt = new Date(Date.UTC(a[0], a[1] - 1 + n, a[2], 12)); return d2k(dt); }
 function vorsorgeFaellig(today) {
-  if (!CONFIG.VORSORGE || !CONFIG.KIND_GEBURT) return null;
+  var geb = kindGeburt();
+  if (!CONFIG.VORSORGE || !geb) return null;
   var done = store.get('vorsorgeDone', {});
   for (var i = 0; i < U_LISTE.length; i++) {
-    var u = U_LISTE[i], von = addMonths(CONFIG.KIND_GEBURT, u[1]), bis = addDays(addMonths(CONFIG.KIND_GEBURT, u[2]), -1);
+    var u = U_LISTE[i], von = addMonths(geb, u[1]), bis = addDays(addMonths(geb, u[2]), -1);
     if (done[u[0]] || today > bis) continue;
     return today >= addDays(von, -56) ? { u: u[0], von: von, bis: bis, offen: today >= von } : null;
   }
@@ -724,14 +759,14 @@ function renderClock() {
 }
 
 function renderCountdown(p) {
-  var el = $('countdown'), best = null, list = CONFIG.COUNTDOWNS.slice();
-  if (CONFIG.KIND_GEBURT) list.push({ datum: CONFIG.KIND_GEBURT.slice(5), geburt: CONFIG.KIND_GEBURT });
+  var el = $('countdown'), best = null, list = CONFIG.COUNTDOWNS.slice(), geb = kindGeburt(), kn = kindName();
+  if (geb) list.push({ datum: geb.slice(5), geburt: geb });
   list.forEach(function (c) {
     var k = c.datum.length === 5 ? p.y + '-' + c.datum : c.datum;
     if (c.datum.length === 5 && k < p.key) k = (p.y + 1) + '-' + c.datum;
     if (k < p.key) return;
     var d = diffDays(p.key, k), titel = c.titel;
-    if (c.geburt) titel = (+k.slice(0, 4) - +c.geburt.slice(0, 4)) + '. Geburtstag ' + (CONFIG.KIND_NAME ? 'von ' + CONFIG.KIND_NAME : 'des Kleinen');
+    if (c.geburt) titel = (+k.slice(0, 4) - +c.geburt.slice(0, 4)) + '. Geburtstag ' + (kn ? 'von ' + kn : 'des Kleinen');
     if (!best || d < best.d) best = { titel: titel, key: k, d: d };
   });
   var nh = nextHoliday(p.key);
@@ -749,8 +784,9 @@ function renderCountdown(p) {
 
 function tempColor(t) { return t <= 0 ? '#A5C8FF' : t <= 8 ? '#38BDF8' : t <= 16 ? '#2DD4BF' : t <= 24 ? '#FBBF24' : '#FB923C'; }
 function renderWx(p) {
-  var w = S.wx, el = $('wx'), head = hd(svg('sun', '#38BDF8', 18), 'Wetter heute', esc(CONFIG.ORT.name) + (S.wxDemo ? ' · <span class="demo">Beispiel</span>' : ''));
-  if (!w || !w.hourly) { el.innerHTML = head + '<div class="bd muted">Wetter wird geladen …</div>'; return; }
+  var w = S.wx, el = $('wx'), on = hasOrt();
+  var head = hd(svg('sun', '#38BDF8', 18), 'Wetter heute', (on ? esc(ort().name) : '<span class="act tap" data-act="settings">Ort eintragen</span>') + (S.wxDemo ? ' · <span class="demo">Beispiel</span>' : ''));
+  if (!w || !w.hourly) { el.innerHTML = head + '<div class="bd muted">' + (on ? 'Wetter wird geladen …' : 'Ort über das Zahnrad eintragen.') + '</div>'; return; }
   var hrs = hourlyFrom(p.key, Math.min(23, p.h + 1)), pick = [];
   for (var i = 0; i < hrs.length && pick.length < 6; i += 2) pick.push(hrs[i]);
   var temps = pick.map(function (x) { return x.temp; }), lo = Math.min.apply(null, temps) - 1, hi = Math.max.apply(null, temps) + 1;
@@ -1191,15 +1227,26 @@ function weekDialog() {
   });
 }
 function settingsDialog() {
-  var s = sorte();
-  openDlg('<h3>Einstellungen</h3><p>Wird nur auf diesem iPad gespeichert.</p>' +
+  var s = sorte(), nm = SET.namen || {}, o = SET.ort;
+  function nameIn(id, k, ph) {
+    return '<input id="' + id + '" value="' + esc(nm[k] || '') + '" placeholder="' + ph + '" autocomplete="off" style="border-left: 5px solid ' + CONFIG.PERSONEN[k].farbe + '">';
+  }
+  openDlg('<h3>Einstellungen</h3><p>Wird nur auf diesem iPad gespeichert – nichts davon steht in der Datei.</p>' +
+    '<label>Namen (Termine aus dem Kalender werden darüber zugeordnet)</label>' +
+    '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px">' + nameIn('sP1', 'p1', 'Person 1') + nameIn('sP2', 'p2', 'Person 2') + '</div>' +
+    '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px">' + nameIn('sKind', 'kind', 'Kind (Name)') +
+    '<input type="date" id="sGeb" value="' + esc(SET.geburt || '') + '" aria-label="Geburtstag des Kindes"></div>' +
+    '<p class="hint">Rechts: Geburtstag des Kindes – für die U-Vorsorge und den Geburtstags-Countdown.</p>' +
+    '<label>Ort für Wetter und Tankstellen (Name oder PLZ)</label><input id="sOrt" value="' + esc(o ? o.q || o.name : '') + '" placeholder="z. B. 93047" autocomplete="off">' +
+    '<p class="hint">' + (o ? 'Gefunden: ' + esc(o.name) + (o.info ? ', ' + esc(o.info) : '') : 'Noch kein Ort eingetragen.') + '</p>' +
     '<label>Kalender-Link (aus dem Apps-Script, endet auf <b>?k=…</b>)</label><input id="sCal" value="' + esc(SET.kalender || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
     '<label>Tankerkönig-API-Schlüssel</label><input id="sTk" value="' + esc(SET.tkKey || '') + '" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" autocapitalize="off">' +
     '<label>Sorte</label><div class="seg" id="sSorte">' + Object.keys(SORTEN).map(function (k) {
       return '<button data-s="' + k + '" class="' + (k === s ? 'on' : '') + '">' + SORTEN[k] + '</button>'; }).join('') + '</div>' +
     '<div class="tog"><input type="checkbox" id="sDemo"' + (SET.demo !== false ? ' checked' : '') + '><span>Beispieldaten zeigen, solange nichts verbunden ist</span></div>' +
     '<div class="btns"><button class="main" id="sOk">Speichern</button><button id="sNo">Schließen</button><button id="sNight" style="margin-left: auto">Nachtansicht testen</button></div>' +
-    '<p class="hint">Familienboard 2.0 · TV: TVmaze · Wetter: Open-Meteo · Sprit: Tankerkönig · Feiertage: Bayern</p>',
+    '<p id="sMsg" class="hint" style="color: #FBBF24"></p>' +
+    '<p class="hint">Familienboard 2.1 · TV: TVmaze · Wetter und Ortssuche: Open-Meteo · Sprit: Tankerkönig · Feiertage: Bayern</p>',
   function () {
     var pick = s;
     Array.prototype.forEach.call(document.querySelectorAll('#sSorte button'), function (b) {
@@ -1208,8 +1255,21 @@ function settingsDialog() {
     $('sNo').onclick = closeDlg;
     $('sNight').onclick = function () { S.nightUntil = Date.now() + 15000; closeDlg(); setTimeout(render, 15100); };
     $('sOk').onclick = function () {
-      SET.kalender = $('sCal').value.trim(); SET.tkKey = $('sTk').value.trim(); SET.sorte = pick; SET.demo = $('sDemo').checked;
-      store.set('settings', SET); S.fuel = null; S.fuelAt = 0; S.calErr = ''; closeDlg(); loadCalendar(); loadFuel();
+      var v = { kalender: $('sCal').value.trim(), tkKey: $('sTk').value.trim(), sorte: pick, demo: $('sDemo').checked, geburt: $('sGeb').value || '',
+                namen: { p1: $('sP1').value.trim(), p2: $('sP2').value.trim(), kind: $('sKind').value.trim() } };
+      var q = $('sOrt').value.trim(), btn = $('sOk');
+      function save(newOrt) {
+        Object.keys(v).forEach(function (k) { SET[k] = v[k]; });
+        if (newOrt !== undefined) { if (newOrt) SET.ort = newOrt; else delete SET.ort; }
+        store.set('settings', SET); S.fuel = null; S.fuelAt = 0; S.calErr = ''; closeDlg(); loadCalendar(); loadFuel(); loadWeather();
+      }
+      if (!q) return save(null);
+      if (o && (o.q === q || o.name === q)) return save();
+      btn.disabled = true; $('sMsg').textContent = 'Suche ' + q + ' …';
+      geocode(q).then(function (r) {
+        btn.disabled = false;
+        if (r) save(r); else $('sMsg').textContent = '„' + q + '“ nicht gefunden. Anders schreiben oder die PLZ eintragen.';
+      }, function () { btn.disabled = false; $('sMsg').textContent = 'Keine Verbindung – der Ort konnte nicht gesucht werden.'; });
     };
   });
 }
@@ -1248,11 +1308,11 @@ function demoCalendar() {
     if (h == null) ev.push({ who: who, title: title, start: localMs(k, 0, 0), end: localMs(addDays(k, 1), 0, 0), allDay: true });
     else { var s = localMs(k, h, mi); ev.push({ who: who, title: title, start: s, end: s + dur * 60000, allDay: false }); }
   }
-  add(0, 19, 30, 120, 'marco', 'Tischtennis'); add(0, 9, 0, 60, 'kind', 'Krabbelgruppe');
-  add(1, 16, 0, 60, 'lena', 'Friseur'); add(1, 18, 30, 90, 'marco', 'Krafttraining');
+  add(0, 19, 30, 120, 'p1', 'Sport'); add(0, 9, 0, 60, 'kind', 'Krabbelgruppe');
+  add(1, 16, 0, 60, 'p2', 'Friseur'); add(1, 18, 30, 90, 'p1', 'Training');
   add(2, 15, 0, 150, 'familie', 'Oma & Opa zum Kaffee'); add(3, 10, 0, 90, 'kind', 'Kinderturnen');
-  add(4, null, 0, 0, 'lena', 'Urlaubstag'); add(4, 18, 30, 90, 'marco', 'Krafttraining');
-  add(5, 20, 0, 90, 'lena', 'Elternabend'); add(6, 19, 30, 120, 'marco', 'Tischtennis');
+  add(4, null, 0, 0, 'p2', 'Urlaubstag'); add(4, 18, 30, 90, 'p1', 'Training');
+  add(5, 20, 0, 90, 'p2', 'Elternabend'); add(6, 19, 30, 120, 'p1', 'Sport');
   return ev;
 }
 function demoDinners() {
@@ -1261,7 +1321,7 @@ function demoDinners() {
   return o;
 }
 function demoFuel() {
-  return [{ name: 'Freie Tankstelle', place: 'Pfreimd', dist: 0.9, price: 1.629 }, { name: 'Markentankstelle', place: 'Nabburg', dist: 5.6, price: 1.649 }, { name: 'Autohof', place: 'Wernberg-Köblitz', dist: 6.3, price: 1.669 }];
+  return [{ name: 'Freie Tankstelle', place: ort().name || 'Ortsmitte', dist: 0.9, price: 1.629 }, { name: 'Markentankstelle', place: 'Nachbarort', dist: 5.6, price: 1.649 }, { name: 'Autohof', place: 'an der Autobahn', dist: 6.3, price: 1.669 }];
 }
 function demoWeather() {
   var p = parts(Date.now()), hourly = [];
