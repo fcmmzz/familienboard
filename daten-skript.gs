@@ -1,18 +1,9 @@
 /* =====================================================================================
    FAMILIENBOARD – Daten-Skript (Google Apps Script)
-   1. Teilt Notizzettel und Essensplan zwischen iPad-Board und Handy (handy.html).
-   2. Liefert die Termine aus euren Google-Kalendern ans Board.
-   Die Daten liegen in eurem Google-Konto, nicht im Repo.
-
-   KALENDER: Das Skript liest alle Kalender, die das Google-Konto sieht, das es bereitstellt.
-   Die Farbe im Board kommt aus dem Kalendernamen:
-     - Kalender heißt wie eine Person am iPad (z. B. „Anna“ oder anna@…)  → deren Farbe
-     - Name enthält „Familie“                                               → Familie (gelb)
-     - Name enthält „Müll“ oder „Abfuhr“                                   → ersetzt die Müll-Termine
-     - Feiertags-, Geburtstags- und Wochennummer-Kalender werden ausgelassen
-   Damit Termine der zweiten Person erscheinen: deren Kalender für dieses Konto freigeben
-   und in Google Kalender abonnieren (links „Weitere Kalender“).
-   Ein Termin, der in zwei Kalendern steht (z. B. Einladung), erscheint einmal als „Familie“.
+   Teilt Notizzettel und Essensplan zwischen iPad-Board und Handy (handy.html).
+   Die Daten liegen in den Skript-Eigenschaften eures Google-Kontos, nicht im Repo.
+   Die Termine kommen weiter aus eurem eigenen Kalender-Skript (Kalender-Link im Zahnrad).
+   Dieses Skript hat KEINEN Zugriff auf Kalender, Mails oder Dateien.
 
    EINRICHTEN (am besten am Rechner, einmalig):
    1. script.google.com → „Neues Projekt“ → Name „Familienboard Daten“.
@@ -25,7 +16,7 @@
    5. Daten-Link = Web-App-URL + ?k=SCHLÜSSEL
       (z. B. https://script.google.com/macros/s/AKfy…/exec?k=3f9a…)
    6. iPad: Board → Zahnrad → „Daten-Link“ einfügen → Speichern. Das Feld „Kalender-Link“
-      kann leer bleiben, dann kommen die Termine auch über den Daten-Link.
+      bleibt, wie es ist (euer Kalender-Skript).
       Im Zahnrad steht dann auch der fertige Handy-Link.
    Skript später geändert? „Bereitstellen“ → „Bereitstellungen verwalten“ → Stift → Version „Neu“.
    Zeitzone: Projekteinstellungen (Zahnrad links) → „Europe/Berlin“.
@@ -80,45 +71,9 @@ function antwort_(o) { return ContentService.createTextOutput(JSON.stringify(o))
 function erlaubt_(e) { var k = P.getProperty('KEY'); return !!k && !!e && !!e.parameter && e.parameter.k === k; }
 function stand_(st) { return { ok: true, rev: st.rev, notes: st.notes, dinners: st.dinners }; }
 
-/* ---------- Kalender */
-var KAL_TAGE = 9;
-var KAL_AUSLASSEN = /feiertag|holiday|geburtstag|birthday|wochennummer|week ?numbers/i;
-function wer_(name) {
-  var n = String(name || '').toLowerCase();
-  if (/müll|muell|abfuhr|abfall/.test(n)) return 'muell';
-  if (/familie|family/.test(n)) return 'familie';
-  return n.split('@')[0];
-}
-function kalender_() {
-  var c = CacheService.getScriptCache(), hit = c.get('KAL');
-  if (hit) return JSON.parse(hit);
-  var von = new Date(Date.now() - 864e5), bis = new Date(von.getTime() + KAL_TAGE * 864e5), seen = {}, out = [];
-  CalendarApp.getAllCalendars().forEach(function (cal) {
-    var name = cal.getName();
-    if (KAL_AUSLASSEN.test(name) || (cal.isHidden && cal.isHidden())) return;
-    var wer = wer_(name);
-    cal.getEvents(von, bis).forEach(function (ev) {
-      var id = ev.getId() + '|' + ev.getStartTime().getTime();
-      if (seen[id]) { if (seen[id].who !== wer && seen[id].who !== 'muell') seen[id].who = 'familie'; return; }
-      var x = { who: wer, title: ev.getTitle() || '(ohne Titel)', start: ev.getStartTime().getTime(), end: ev.getEndTime().getTime(), allDay: ev.isAllDayEvent() };
-      seen[id] = x; out.push(x);
-    });
-  });
-  try { c.put('KAL', JSON.stringify(out), 120); } catch (e) {}
-  return out;
-}
-function kalenderTest() {   // im Editor ausführen: zeigt, welche Kalender wie zugeordnet werden
-  CalendarApp.getAllCalendars().forEach(function (cal) {
-    var n = cal.getName();
-    Logger.log((KAL_AUSLASSEN.test(n) ? 'ausgelassen' : 'wer: ' + wer_(n)) + '  ←  ' + n);
-  });
-}
-
 function doGet(e) {
   if (!erlaubt_(e)) return antwort_({ ok: false, error: 'Schlüssel falsch' });
-  if (e.parameter.format === 'json') {
-    try { return antwort_({ ok: true, events: kalender_() }); } catch (x) { return antwort_({ ok: false, error: 'Kalender: ' + x.message }); }
-  }
+  if (e.parameter.format === 'json') return antwort_({ ok: false, error: 'Das ist der Daten-Link – Termine kommen über den Kalender-Link.' });
   var st = laden_(); aufraeumen_(st);
   return antwort_(stand_(st));
 }

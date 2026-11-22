@@ -353,7 +353,7 @@ var SET = store.get('settings', {});
     if (ch) store.set('settings', SET);   // Parameter bleiben in der Adresse, damit 'Zum Home-Bildschirm' sie mitnimmt
   } catch (e) {}
 })();
-function calLink() { return SET.kalender || CONFIG.KALENDER_LINK || (VORSCHAU ? '' : SET.daten || ''); }   // leer: Termine über den Daten-Link
+function calLink() { return SET.kalender || CONFIG.KALENDER_LINK; }
 function tkKey() { return SET.tkKey || CONFIG.TANKERKOENIG_KEY; }
 function sorte() { return SET.sorte || CONFIG.TANKEN.sorte; }
 function demoOn() { return VORSCHAU || SET.demo !== false; }
@@ -1309,7 +1309,7 @@ function settingsDialog() {
     '<p class="hint">Rechts: Geburtstag des Kindes – für die U-Vorsorge und den Geburtstags-Countdown.</p>' +
     '<label>Ort für Wetter und Tankstellen (Name oder PLZ)</label><input id="sOrt" value="' + esc(o ? o.q || o.name : '') + '" placeholder="z. B. 93047" autocomplete="off">' +
     '<p class="hint">' + (o ? 'Gefunden: ' + esc(o.name) + (o.info ? ', ' + esc(o.info) : '') : 'Noch kein Ort eingetragen.') + '</p>' +
-    '<label>Kalender-Link (leer lassen = Termine kommen über den Daten-Link)</label><input id="sCal" value="' + esc(SET.kalender || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
+    '<label>Kalender-Link (aus eurem Kalender-Skript, endet auf <b>?k=…</b>)</label><input id="sCal" value="' + esc(SET.kalender || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
     '<label>Daten-Link (Notizzettel und Essensplan mit dem Handy teilen, aus dem Daten-Skript)</label><input id="sDat" value="' + esc(SET.daten || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
     (SET.daten ? '<p class="hint">Handy-Link (am Handy öffnen, dann „Zum Home-Bildschirm“):</p><input id="sHandy" readonly value="' + esc(handyLink()) + '" style="font-size: 13px">' : '') +
     '<label>Tankerkönig-API-Schlüssel</label><input id="sTk" value="' + esc(SET.tkKey || '') + '" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" autocapitalize="off">' +
