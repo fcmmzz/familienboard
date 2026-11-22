@@ -3,6 +3,8 @@
    Teilt Notizzettel und Essensplan zwischen iPad-Board und Handy (handy.html).
    Die Daten liegen in den Skript-Eigenschaften eures Google-Kontos, nicht im Repo.
    Die Termine kommen weiter aus eurem eigenen Kalender-Skript (Kalender-Link im Zahnrad).
+   Verkehr: berechnet die Fahrzeit mit aktueller Verkehrslage über Google Maps.
+   Start und Ziel schickt das Board mit (am iPad eingetragen, nicht im Repo).
    Dieses Skript hat KEINEN Zugriff auf Kalender, Mails oder Dateien.
 
    EINRICHTEN (am besten am Rechner, einmalig):
@@ -71,8 +73,34 @@ function antwort_(o) { return ContentService.createTextOutput(JSON.stringify(o))
 function erlaubt_(e) { var k = P.getProperty('KEY'); return !!k && !!e && !!e.parameter && e.parameter.k === k; }
 function stand_(st) { return { ok: true, rev: st.rev, notes: st.notes, dinners: st.dinners }; }
 
+/* ---------- Verkehr (Google Maps, mit aktueller Verkehrslage) */
+function strecke_(a, b) {
+  var r = Maps.newDirectionFinder().setOrigin(a).setDestination(b).setMode(Maps.DirectionFinder.Mode.DRIVING)
+    .setDepart(new Date()).setLanguage('de').setRegion('de').getDirections();
+  var rt = r && r.routes && r.routes[0];
+  if (!rt) return null;
+  var leg = rt.legs[0], mit = leg.duration_in_traffic || leg.duration;
+  return { min: Math.round(mit.value / 60), normal: Math.round(leg.duration.value / 60), km: Math.round(leg.distance.value / 1000),
+           via: rt.summary || '', verkehr: !!leg.duration_in_traffic };
+}
+function verkehr_(von, nach) {
+  var c = CacheService.getScriptCache(), key = ('V|' + von + '|' + nach).slice(0, 240), hit = c.get(key);
+  if (hit) return JSON.parse(hit);
+  var out = { ok: true, hin: strecke_(von, nach), rueck: strecke_(nach, von), at: Date.now() };
+  try { c.put(key, JSON.stringify(out), 240); } catch (e) {}
+  return out;
+}
+function verkehrTest() {   // im Editor ausführen: prüft die Abfrage (Start/Ziel hier nur zum Testen eintragen)
+  Logger.log(JSON.stringify(verkehr_('Berlin Hauptbahnhof', 'Potsdam Hauptbahnhof')));
+}
+
 function doGet(e) {
   if (!erlaubt_(e)) return antwort_({ ok: false, error: 'Schlüssel falsch' });
+  if (e.parameter.a === 'verkehr') {
+    var von = String(e.parameter.von || '').slice(0, 150), nach = String(e.parameter.nach || '').slice(0, 150);
+    if (!von || !nach) return antwort_({ ok: false, error: 'Start oder Ziel fehlt' });
+    try { return antwort_(verkehr_(von, nach)); } catch (x) { return antwort_({ ok: false, error: 'Maps: ' + x.message }); }
+  }
   if (e.parameter.format === 'json') return antwort_({ ok: false, error: 'Das ist der Daten-Link – Termine kommen über den Kalender-Link.' });
   var st = laden_(); aufraeumen_(st);
   return antwort_(stand_(st));

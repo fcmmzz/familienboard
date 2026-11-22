@@ -167,7 +167,7 @@
     <section id="wk" class="card" style="grid-area: wk; --a: 129, 140, 248"></section>
     <section id="sched" class="card" style="grid-area: sched; --a: 45, 212, 191"></section>
     <div id="tiles"></div>
-    <section id="meals" class="card" style="grid-area: meals; --a: 251, 146, 60"></section>
+    <section id="traffic" class="card" style="grid-area: meals; --a: 251, 146, 60"></section>
     <section id="tv" class="card" style="grid-area: tv; --a: 244, 114, 182"></section>
     <section id="notes" class="card" style="grid-area: notes; --a: 251, 191, 36"></section>
     <section id="food" class="card" style="grid-area: food; --a: 248, 113, 113"></section>
@@ -290,6 +290,7 @@ var MYICONS = {
   stern: '<path fill="currentColor" d="M512 92L629 340L900 372L700 556L754 824L512 690L270 824L324 556L124 372L395 340Z"/>',
   notiz: '<g fill="currentColor"><path fill-rule="evenodd" d="M214 96H630L840 306V864Q840 928 776 928H214Q150 928 150 864V160Q150 96 214 96ZM262 452H728V516H262ZM262 600H728V664H262ZM262 748H560V812H262Z"/><path d="M630 96V246Q630 306 690 306H840Z" opacity=".55"/></g>',
   apfel: '<g fill="currentColor"><path d="M512 318C432 262 300 250 218 332C116 434 148 652 250 792C320 888 402 938 472 908C496 898 528 898 552 908C622 938 704 888 774 792C876 652 908 434 806 332C724 250 592 262 512 318Z"/><path d="M520 300C516 214 556 140 640 104L668 150C606 180 576 228 572 300Z"/><path d="M560 210C600 140 690 112 770 130C750 200 670 246 580 236Z"/></g>',
+  auto: '<path fill="currentColor" fill-rule="evenodd" d="M250 300Q270 230 340 230H684Q754 230 774 300L830 470Q900 490 900 560V760Q900 790 870 790H820V850Q820 880 790 880H730Q700 880 700 850V790H324V850Q324 880 294 880H234Q204 880 204 850V790H154Q124 790 124 760V560Q124 490 194 470ZM300 470H724L684 330Q676 300 650 300H374Q348 300 340 330ZM260 600A50 50 0 1 0 260 700A50 50 0 1 0 260 600ZM764 600A50 50 0 1 0 764 700A50 50 0 1 0 764 600Z"/>',
   kal: '<path fill="currentColor" fill-rule="evenodd" d="M250 120H330V190H694V120H774V190H840Q904 190 904 254V840Q904 904 840 904H184Q120 904 120 840V254Q120 190 184 190H250ZM200 360V824H824V360ZM290 450H410V560H290ZM452 450H572V560H452ZM614 450H734V560H614ZM290 620H410V730H290ZM452 620H572V730H452Z"/>',
   tv: '<path fill="currentColor" fill-rule="evenodd" d="M180 250H844Q904 250 904 310V730Q904 790 844 790H180Q120 790 120 730V310Q120 250 180 250ZM196 326V714H828V326ZM330 840H694V900H330ZM392 110L512 220L632 110L672 150L552 260H472L352 150Z"/>',
   partly: '' // wird unten aus Sonne und Wolke gebaut
@@ -350,6 +351,7 @@ var SET = store.get('settings', {});
     if (q.get('tanken')) { SET.tkKey = q.get('tanken'); ch = true; }
     if (q.get('sorte')) { SET.sorte = q.get('sorte'); ch = true; }
     if (q.get('daten')) { SET.daten = q.get('daten'); ch = true; }
+    if (q.get('ziel')) { SET.weg = { von: q.get('start') || (SET.weg && SET.weg.von) || '', nach: q.get('ziel') }; ch = true; }
     if (ch) store.set('settings', SET);   // Parameter bleiben in der Adresse, damit 'Zum Home-Bildschirm' sie mitnimmt
   } catch (e) {}
 })();
@@ -557,11 +559,30 @@ function loadWeather() {
     store.set('cacheWx', { at: S.wxAt, lat: o.lat, wx: S.wx });
   }).catch(function () { if (!S.wx && demoOn()) { S.wx = demoWeather(); S.wxDemo = true; render(); } retry('wx', loadWeather, 60000); });
 }
+/* ----------------------------------------------------------------- Verkehr (über das Daten-Skript, Google Maps) */
+// Start und Ziel stehen NICHT in der Datei, sondern am iPad (Zahnrad → Verkehr).
+function weg() { var w = SET.weg || {}; return { von: w.von || ort().name || '', nach: w.nach || '' }; }
+function kurzOrt(s) { return String(s || '').split(',')[0].trim(); }
+function loadTraffic() {
+  var w = weg(), link = dataLink();
+  if (VORSCHAU || !link || !w.nach || !w.von) { S.tr = demoOn() ? demoTraffic() : null; S.trDemo = !!S.tr; render(); return; }
+  if (S.tr && !S.trDemo && isNight(parts(Date.now()).min)) return;   // nachts nicht abfragen
+  fetch(link + (link.indexOf('?') > -1 ? '&' : '?') + 'a=verkehr&von=' + encodeURIComponent(w.von) + '&nach=' + encodeURIComponent(w.nach))
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (j && j.ok && j.hin) { S.tr = j; S.trDemo = false; S.trAt = Date.now(); S.trErr = ''; store.set('cacheTr', { at: S.trAt, w: w.von + '|' + w.nach, tr: j }); }
+      else S.trErr = (j && j.error) || 'Fehler';
+      render();
+    }, function () { S.trErr = 'offline'; render(); retry('tr', loadTraffic, 2 * 60000); });
+}
+function demoTraffic() { return { hin: { min: 41, normal: 34, km: 45, via: 'Autobahn' }, rueck: { min: 36, normal: 35, km: 45, via: 'Autobahn' } }; }
 function restoreCache() {   // letzte gute Daten, damit das Board nach einem Neustart ohne WLAN nicht leer ist
   var now = Date.now(), c = store.get('cacheWx', null);
   if (c && c.wx && now - c.at < 18 * 3600e3 && hasOrt() && c.lat === ort().lat) { S.wx = c.wx; S.wxAt = c.at; }
   c = store.get('cacheCal', null);
   if (c && c.ev && now - c.at < 3 * 864e5 && c.link === calLink()) { S.cal = c.ev; S.calAt = c.at; }
+  c = store.get('cacheTr', null);
+  if (c && c.tr && now - c.at < 3 * 3600e3 && c.w === weg().von + '|' + weg().nach) { S.tr = c.tr; S.trAt = c.at; }
   c = store.get('cacheTv', null);
   if (c && c.tv && now - c.at < 864e5 && CONFIG.REALITY.an) { S.tv = c.tv; S.tvAt = c.at; }
 }
@@ -805,7 +826,7 @@ function render() {
   renderWk(p);
   renderTiles(p);
   renderSched(now, p);
-  renderMeals(p);
+  renderTraffic(p);
   renderTV(p);
   renderNotes();
   renderFood(p);
@@ -968,6 +989,31 @@ function renderSched(now, p) {
   });
 }
 
+function renderTraffic(p) {
+  var el = $('traffic'), w = weg(), t = S.tr;
+  var meta = S.trDemo ? '<span class="demo">Beispiel</span>' : S.trErr ? '<span style="color: #F87171">' + (S.trErr === 'offline' ? 'offline' : esc(S.trErr)) + (S.trAt ? ' · ' + hm(S.trAt) : '') + '</span>' : S.trAt ? 'Stand ' + hm(S.trAt) : '';
+  var head = hd(svg('auto', '#FB923C', 18), 'Verkehr', meta);
+  if (!t) { el.innerHTML = head + '<div class="bd muted" style="font-size: 14px">' + (w.nach ? 'Wird geladen …' : 'Start und Ziel im Zahnrad unter „Verkehr“ eintragen (braucht den Daten-Link).') + '</div>'; return; }
+  var von = kurzOrt(w.von) || 'Start', nach = kurzOrt(w.nach) || 'Ziel', nachm = p.min >= 12 * 60;
+  var a = { r: t.hin, l: von + ' → ' + nach }, b = { r: t.rueck, l: nach + ' → ' + von };
+  var first = nachm ? b : a, second = nachm ? a : b;
+  function lage(r) { var d = Math.max(0, r.min - r.normal); return { d: d, c: d <= 3 ? '#4ADE80' : d <= 10 ? '#FBBF24' : '#F87171', t: d <= 3 ? 'frei' : d <= 10 ? 'zähflüssig' : 'Stau' }; }
+  var html = '';
+  if (first.r) {
+    var z = lage(first.r), an = hm(Date.now() + first.r.min * 60000);
+    html += '<div class="muted rj" style="font-size: 13px; letter-spacing: .12em; text-transform: uppercase">' + esc(first.l) + '</div>' +
+      '<div class="row" style="gap: 14px; margin: 2px 0 4px"><span class="rj" style="font-size: 46px; font-weight: 700; line-height: 1; color: ' + z.c + '; text-shadow: 0 0 16px ' + z.c + '66">' + first.r.min + '<span style="font-size: 20px"> Min</span></span>' +
+      '<span class="col" style="gap: 2px"><span class="pill" style="color: ' + z.c + '; border-color: ' + z.c + '; min-width: 0">' + z.t + (z.d ? ' · +' + z.d + ' Min' : '') + '</span>' +
+      '<span style="font-size: 13px; color: #D5DDF5">Ankunft ca. ' + an + ' Uhr</span></span></div>' +
+      '<div class="muted ell" style="font-size: 12px">' + first.r.km + ' km' + (first.r.via ? ' · über ' + esc(first.r.via) : '') + (first.r.verkehr === false ? ' · ohne Verkehrsdaten' : '') + '</div>';
+  } else html += '<div class="muted">' + esc(first.l) + ': keine Route gefunden</div>';
+  if (second.r) {
+    var z2 = lage(second.r);
+    html += '<div class="row" style="gap: 8px; margin-top: auto; padding-top: 6px; border-top: 1px solid var(--line); font-size: 13px"><span class="grow ell muted">' + esc(second.l) + '</span>' +
+      '<b class="rj" style="font-size: 16px; color: ' + z2.c + '">' + second.r.min + ' Min</b>' + (z2.d ? '<span style="color: ' + z2.c + '">+' + z2.d + '</span>' : '') + '</div>';
+  }
+  el.innerHTML = head + '<div class="bd" style="padding-top: 6px">' + html + '</div>';
+}
 function renderMeals(p) {
   var rows = '', use = foodUrgent(p.key).map(function (x) { return x.name; }).slice(0, 2).join(', '), demo = false;
   for (var i = 0; i < 7; i++) {
@@ -1309,6 +1355,9 @@ function settingsDialog() {
     '<p class="hint">Rechts: Geburtstag des Kindes – für die U-Vorsorge und den Geburtstags-Countdown.</p>' +
     '<label>Ort für Wetter und Tankstellen (Name oder PLZ)</label><input id="sOrt" value="' + esc(o ? o.q || o.name : '') + '" placeholder="z. B. 93047" autocomplete="off">' +
     '<p class="hint">' + (o ? 'Gefunden: ' + esc(o.name) + (o.info ? ', ' + esc(o.info) : '') : 'Noch kein Ort eingetragen.') + '</p>' +
+    '<label>Verkehr (Fahrzeit mit aktueller Verkehrslage, braucht den Daten-Link)</label>' +
+    '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px"><input id="sVon" value="' + esc((SET.weg && SET.weg.von) || '') + '" placeholder="Start (leer = Ort)" autocomplete="off">' +
+    '<input id="sNach" value="' + esc((SET.weg && SET.weg.nach) || '') + '" placeholder="Ziel: Ort, Straße Nr." autocomplete="off"></div>' +
     '<label>Kalender-Link (aus eurem Kalender-Skript, endet auf <b>?k=…</b>)</label><input id="sCal" value="' + esc(SET.kalender || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
     '<label>Daten-Link (Notizzettel und Essensplan mit dem Handy teilen, aus dem Daten-Skript)</label><input id="sDat" value="' + esc(SET.daten || '') + '" placeholder="https://script.google.com/macros/s/…/exec?k=…" autocomplete="off" autocapitalize="off">' +
     (SET.daten ? '<p class="hint">Handy-Link (am Handy öffnen, dann „Zum Home-Bildschirm“):</p><input id="sHandy" readonly value="' + esc(handyLink()) + '" style="font-size: 13px">' : '') +
@@ -1327,7 +1376,7 @@ function settingsDialog() {
     $('sNo').onclick = closeDlg;
     $('sNight').onclick = function () { S.nightUntil = Date.now() + 15000; closeDlg(); setTimeout(render, 15100); };
     $('sOk').onclick = function () {
-      var v = { daten: $('sDat').value.trim(), kalender: $('sCal').value.trim(), tkKey: $('sTk').value.trim(), sorte: pick, demo: $('sDemo').checked, geburt: $('sGeb').value || '',
+      var v = { weg: { von: $('sVon').value.trim(), nach: $('sNach').value.trim() }, daten: $('sDat').value.trim(), kalender: $('sCal').value.trim(), tkKey: $('sTk').value.trim(), sorte: pick, demo: $('sDemo').checked, geburt: $('sGeb').value || '',
                 namen: { p1: $('sP1').value.trim(), p2: $('sP2').value.trim(), kind: $('sKind').value.trim() } };
       var q = $('sOrt').value.trim(), btn = $('sOk');
       function save(newOrt) {
@@ -1336,7 +1385,8 @@ function settingsDialog() {
         if (newOrt !== undefined) { if (newOrt) SET.ort = newOrt; else delete SET.ort; }
         store.set('settings', SET); S.fuel = null; S.fuelAt = 0; S.calErr = ''; S.syncErr = ''; S.syncAt = 0;
         if (neu) syncSeed();
-        closeDlg(); loadCalendar(); loadFuel(); loadWeather(); syncNow();
+        S.tr = null; S.trAt = 0; S.trErr = '';
+        closeDlg(); loadCalendar(); loadFuel(); loadWeather(); syncNow(); loadTraffic();
       }
       if (!q) return save(null);
       if (o && (o.q === q || o.name === q)) return save();
@@ -1453,14 +1503,14 @@ MYICONS.gear = '<path fill="currentColor" fill-rule="evenodd" d="' + gearPath() 
 $('gear').innerHTML = svg('gear', '#9FB4E8', 22);
 window.addEventListener('resize', fit);
 window.addEventListener('orientationchange', function () { setTimeout(fit, 300); });
-document.addEventListener('visibilitychange', function () { wake(); if (document.visibilityState === 'visible') { loadCalendar(); loadWeather(); loadTV(); syncNow(); } });
+document.addEventListener('visibilitychange', function () { wake(); if (document.visibilityState === 'visible') { loadCalendar(); loadWeather(); loadTV(); syncNow(); loadTraffic(); } });
 document.addEventListener('touchend', wake, { passive: true });
-window.addEventListener('online', function () { loadWeather(); loadCalendar(); loadFuel(); loadTV(); syncNow(); });   // WLAN wieder da
+window.addEventListener('online', function () { loadWeather(); loadCalendar(); loadFuel(); loadTV(); syncNow(); loadTraffic(); });   // WLAN wieder da
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(function () {});   // hält eine Kopie des Boards, falls beim Start kein Netz da ist
 }
 cleanup(); restoreCache(); fit(); wake();
-loadWeather(); loadCalendar(); loadFuel(); loadTV(); syncNow();
+loadWeather(); loadCalendar(); loadFuel(); loadTV(); syncNow(); loadTraffic();
 setInterval(function () { if (!isNight(parts(Date.now()).min)) syncNow(); }, 60000);
 setInterval(renderClock, 1000);
 setInterval(render, 15000);
@@ -1468,6 +1518,7 @@ setInterval(loadCalendar, 5 * 60000);
 setInterval(loadWeather, 15 * 60000);
 setInterval(loadFuel, 15 * 60000);
 setInterval(loadTV, 60 * 60000);
+setInterval(loadTraffic, 5 * 60000);
 // einmal am Tag neu laden (frischer Speicher, neue Version) – ab 4 Uhr, aber erst, wenn das Netz da ist.
 // Ohne WLAN würde Safari sonst eine Fehlerseite zeigen und das Board stünde still.
 var LOADED_ON = parts(Date.now()).key, reloadTry = false;
