@@ -64,7 +64,8 @@
   <div id="app" class="hidden">
     <div class="tabs">
       <button data-tab="notes" class="on" style="--a: var(--gelb)">Einkauf</button>
-      <button data-tab="meals" style="--a: var(--orange)">Essensplan</button>
+      <button data-tab="meals" style="--a: var(--orange)">Essen</button>
+      <button data-tab="people" style="--a: 74, 222, 128">Personen</button>
     </div>
 
     <div id="notes" class="card">
@@ -74,6 +75,7 @@
     </div>
 
     <div id="meals" class="card hidden" style="--a: var(--orange)"></div>
+    <div id="people" class="hidden"></div>
     <p class="hint">Änderungen ohne Netz werden gemerkt und gesendet, sobald wieder Empfang da ist.</p>
   </div>
 </div>
@@ -112,6 +114,10 @@ function applyOp(st, o) {
   else if (o.op === 'del') st.notes = st.notes.filter(function (x) { return x.id !== o.id; });
   else if (o.op === 'clear') st.notes = st.notes.filter(function (x) { return !x.done; });
   else if (o.op === 'dinner' && /^\d{4}-\d\d-\d\d$/.test(o.key)) { if (t) st.dinners[o.key] = t; else delete st.dinners[o.key]; }
+  else if (o.op === 'profil' && /^(p1|p2|kind)$/.test(o.who) && /^[a-z]{1,20}$/.test(o.f)) {
+    st.profile = st.profile || {}; var pr = st.profile[o.who] = st.profile[o.who] || {};
+    if (t) pr[o.f] = t; else delete pr[o.f];
+  }
 }
 function doOp(o) {
   var st = state(); applyOp(st, o); store.set('state', st);
@@ -129,7 +135,10 @@ function sync() {
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j || !j.ok) { S.err = (j && j.error) || 'Fehler'; return; }
-      var rest = store.get('queue', []).slice(n), st = { notes: j.notes || [], dinners: j.dinners || {} };
+      var rest = store.get('queue', []).slice(n), alt = j.profile === undefined;
+      var st = { notes: j.notes || [], dinners: j.dinners || {}, profile: alt ? (state().profile || {}) : j.profile };
+      if (alt) store.set('profilQ', store.get('profilQ', []).concat(q.slice(0, n).filter(function (o) { return o.op === 'profil'; })).slice(-300));
+      else if (store.get('profilQ', []).length) { rest = store.get('profilQ', []).concat(rest); store.set('profilQ', []); }
       rest.forEach(function (o) { applyOp(st, o); });
       store.set('queue', rest); store.set('state', st);
       S.at = Date.now(); S.err = ''; store.set('at', S.at);
@@ -154,6 +163,8 @@ function render() {
   Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === TAB); });
   $('notes').classList.toggle('hidden', TAB !== 'notes');
   $('meals').classList.toggle('hidden', TAB !== 'meals');
+  $('people').classList.toggle('hidden', TAB !== 'people');
+  if (!editing) renderPeople();
   var s = state(), open = s.notes.filter(function (x) { return !x.done; }), done = s.notes.filter(function (x) { return x.done; });
   $('list').innerHTML = open.concat(done).map(function (x) {
     return '<div class="row' + (x.done ? ' done' : '') + '" data-id="' + esc(x.id) + '"><span class="ck">' +
@@ -171,6 +182,25 @@ function render() {
     }
     $('meals').innerHTML = rows;
   }
+}
+
+/* ---------- Personen (Größen, Geschenkideen …) */
+var FELDER = {
+  erwachsen: [['oben', 'Oberteil'], ['hose', 'Hose'], ['schuhe', 'Schuhe'], ['ring', 'Ringgröße'], ['allergien', 'Allergien / verträgt nicht'], ['wuensche', 'Geschenkideen'], ['notiz', 'Notizen']],
+  kind:      [['kleid', 'Kleidergröße'], ['schuhe', 'Schuhe'], ['windel', 'Windelgröße'], ['allergien', 'Allergien / verträgt nicht'], ['wuensche', 'Wunschliste'], ['notiz', 'Notizen']]
+};
+var PERS = [['p1', 'Person 1', '56, 189, 248'], ['p2', 'Person 2', '244, 114, 182'], ['kind', 'Kind', '74, 222, 128']];
+function renderPeople() {
+  var pr = state().profile || {};
+  $('people').innerHTML = PERS.map(function (x) {
+    var d = pr[x[0]] || {};
+    return '<div class="card" style="--a: ' + x[2] + '; margin-bottom: 12px"><div class="day" style="grid-template-columns: 1fr"><b style="color: rgb(' + x[2] + '); font-size: 17px">' +
+      esc(d.name || x[1]).toUpperCase() + '</b></div>' +
+      FELDER[x[0] === 'kind' ? 'kind' : 'erwachsen'].map(function (f) {
+        return '<div class="day" style="grid-template-columns: 110px 1fr"><b style="font: 500 13px Inter, sans-serif; letter-spacing: 0">' + esc(f[1]) + '</b>' +
+          '<input data-who="' + x[0] + '" data-f="' + f[0] + '" value="' + esc(d[f[0]] || '') + '" placeholder="–" autocomplete="off" enterkeyhint="done"></div>';
+      }).join('') + '</div>';
+  }).join('');
 }
 
 /* ---------- Bedienung */
@@ -201,6 +231,15 @@ $('meals').addEventListener('focusout', function (e) {
   if (v !== old) doOp({ op: 'dinner', key: k, text: v }); else render();
 });
 $('meals').addEventListener('keydown', function (e) { if (e.key === 'Enter') e.target.blur(); });
+$('people').addEventListener('focusin', function () { editing = true; });
+$('people').addEventListener('focusout', function (e) {
+  editing = !!(e.relatedTarget && $('people').contains(e.relatedTarget));
+  var inp = e.target, w = inp.getAttribute('data-who'), f = inp.getAttribute('data-f');
+  if (!w) return;
+  var v = inp.value.trim(), old = ((state().profile || {})[w] || {})[f] || '';
+  if (v !== old) doOp({ op: 'profil', who: w, f: f, text: v }); else render();
+});
+$('people').addEventListener('keydown', function (e) { if (e.key === 'Enter') e.target.blur(); });
 $('linkOk').onclick = function () {
   var v = $('link').value.trim();
   if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(v)) { alert('Das sieht nicht wie der Daten-Link aus (beginnt mit https://script.google.com/…).'); return; }

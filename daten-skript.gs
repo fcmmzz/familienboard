@@ -1,6 +1,6 @@
 /* =====================================================================================
    FAMILIENBOARD – Daten-Skript (Google Apps Script)
-   Teilt Notizzettel und Essensplan zwischen iPad-Board und Handy (handy.html).
+   Teilt Notizzettel, Essensplan und Personen (Größen, Geschenkideen …) zwischen iPad-Board und Handy (handy.html).
    Die Daten liegen in den Skript-Eigenschaften eures Google-Kontos, nicht im Repo.
    Die Termine kommen weiter aus eurem eigenen Kalender-Skript (Kalender-Link im Zahnrad).
    Verkehr: berechnet die Fahrzeit mit aktueller Verkehrslage über Google Maps.
@@ -62,6 +62,10 @@ function applyOp(st, o) {
   else if (o.op === 'del') st.notes = st.notes.filter(function (x) { return x.id !== o.id; });
   else if (o.op === 'clear') st.notes = st.notes.filter(function (x) { return !x.done; });
   else if (o.op === 'dinner' && /^\d{4}-\d\d-\d\d$/.test(o.key)) { if (t) st.dinners[o.key] = t; else delete st.dinners[o.key]; }
+  else if (o.op === 'profil' && /^(p1|p2|kind)$/.test(o.who) && /^[a-z]{1,20}$/.test(o.f)) {
+    st.profile = st.profile || {}; var pr = st.profile[o.who] = st.profile[o.who] || {};
+    if (t) pr[o.f] = t; else delete pr[o.f];
+  }
 }
 function aufraeumen_(st) {   // Erledigtes nach 12 Stunden, Essen nach 14 Tagen, höchstens 150 Notizen
   var grenze = Date.now() - 12 * 3600e3, alt = minusTage_(heute_(), 14);
@@ -71,7 +75,7 @@ function aufraeumen_(st) {   // Erledigtes nach 12 Stunden, Essen nach 14 Tagen,
 
 function antwort_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function erlaubt_(e) { var k = P.getProperty('KEY'); return !!k && !!e && !!e.parameter && e.parameter.k === k; }
-function stand_(st) { return { ok: true, rev: st.rev, notes: st.notes, dinners: st.dinners }; }
+function stand_(st) { return { ok: true, rev: st.rev, notes: st.notes, dinners: st.dinners, profile: st.profile || {} }; }
 
 /* ---------- Verkehr (Google Maps, mit aktueller Verkehrslage) */
 function strecke_(a, b) {

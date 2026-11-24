@@ -30,10 +30,17 @@
   #stage.hoch { width: 820px; height: 1180px; }
   #sky { position: absolute; left: 0; top: 0; }
   #grid { position: absolute; inset: 0; box-sizing: border-box; padding: 16px; display: grid; gap: 12px;
-          grid-template-columns: 318px 1fr 1fr; grid-template-rows: 188px 70px 1fr 1fr;
-          grid-template-areas: "clock wx wk" "sched tiles tiles" "sched meals tv" "sched notes food"; }
-  #stage.hoch #grid { grid-template-columns: 1fr 1fr; grid-template-rows: 150px 188px 70px 1fr 1fr 1fr;
-          grid-template-areas: "clock clock" "wx wk" "tiles tiles" "sched meals" "sched tv" "notes food"; }
+          grid-template-columns: 318px 1fr 1fr; grid-template-rows: 188px 70px 1fr 1fr 62px;
+          grid-template-areas: "clock wx wk" "sched tiles tiles" "sched meals tv" "sched notes food" "people notes food"; }
+  #stage.hoch #grid { grid-template-columns: 1fr 1fr; grid-template-rows: 150px 188px 70px 1fr 1fr 1fr 62px;
+          grid-template-areas: "clock clock" "wx wk" "tiles tiles" "sched meals" "sched tv" "notes food" "people people"; }
+  #people { grid-area: people; display: flex; gap: 8px; min-width: 0; }
+  .pt { --a: 56, 189, 248; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 0 6px; border-radius: 12px;
+        background: linear-gradient(135deg, rgba(var(--a), .24), rgba(var(--a), .05)); border: 1.5px solid rgba(var(--a), .6); box-shadow: 0 0 12px rgba(var(--a), .2); }
+  .pt .av { width: 30px; height: 30px; border-radius: 999px; flex: none; display: flex; align-items: center; justify-content: center; background: rgba(var(--a), .25);
+            font: 700 16px Rajdhani, sans-serif; color: rgb(var(--a)); }
+  .pt b { display: block; font: 600 14px/1.2 Inter, sans-serif; color: rgb(var(--a)); }
+  .pt small { display: block; font-size: 11px; color: #B9C8EE; }
   #stage.advent #grid { padding-top: 36px; }
 
   /* Neon-Karten */
@@ -171,6 +178,7 @@
     <section id="tv" class="card" style="grid-area: tv; --a: 244, 114, 182"></section>
     <section id="notes" class="card" style="grid-area: notes; --a: 251, 191, 36"></section>
     <section id="food" class="card" style="grid-area: food; --a: 248, 113, 113"></section>
+    <div id="people"></div>
   </div>
   <div id="night" class="hidden tap" data-act="peek">
     <span id="nDate"></span>
@@ -247,6 +255,12 @@ var CONFIG = {
   // ISS MICH ZUERST – Kühlschrank-Check an diesem Wochentag (6 = Samstag); am ersten im Monat mit Vorratsregal
   KUEHLSCHRANK_CHECK: { wochentag: 6 },
   // Schnellwahl beim Eintragen: vorsichtige RICHTWERTE in Tagen. Was auf der Packung steht, geht immer vor.
+  // PERSONEN-KACHELN: Felder im Formular (Werte nur am iPad und im Daten-Skript, nie in dieser Datei)
+  PROFIL_FELDER: {
+    erwachsen: [['oben', 'Oberteil'], ['hose', 'Hose'], ['schuhe', 'Schuhe'], ['ring', 'Ringgröße'], ['allergien', 'Allergien / verträgt nicht'], ['wuensche', 'Geschenkideen'], ['notiz', 'Notizen']],
+    kind:      [['kleid', 'Kleidergröße'], ['schuhe', 'Schuhe'], ['windel', 'Windelgröße'], ['allergien', 'Allergien / verträgt nicht'], ['wuensche', 'Wunschliste'], ['notiz', 'Notizen']]
+  },
+
   SCHNELLWAHL: [
     { label: 'Gläschen offen',   name: 'Babygläschen', art: 'offen',  tage: 2 },
     { label: 'Milch offen',      name: 'Milch',        art: 'offen',  tage: 3 },
@@ -634,16 +648,23 @@ function applyOp(st, o) {   // gleiche Logik wie im Daten-Skript und in handy.ht
   else if (o.op === 'del') st.notes = st.notes.filter(function (x) { return x.id !== o.id; });
   else if (o.op === 'clear') st.notes = st.notes.filter(function (x) { return !x.done; });
   else if (o.op === 'dinner' && /^\d{4}-\d\d-\d\d$/.test(o.key)) { if (t) st.dinners[o.key] = t; else delete st.dinners[o.key]; }
+  else if (o.op === 'profil' && /^(p1|p2|kind)$/.test(o.who) && /^[a-z]{1,20}$/.test(o.f)) {
+    st.profile = st.profile || {}; var pr = st.profile[o.who] = st.profile[o.who] || {};
+    if (t) pr[o.f] = t; else delete pr[o.f];
+  }
 }
+function profile() { return store.get('profile', {}); }
 function doOp(o) {
-  var st = { notes: notes(), dinners: dinners() };
-  applyOp(st, o); setNotes(st.notes); store.set('dinners', st.dinners);
+  var st = { notes: notes(), dinners: dinners(), profile: profile() };
+  applyOp(st, o); setNotes(st.notes); store.set('dinners', st.dinners); store.set('profile', st.profile);
   if (dataLink()) { var q = store.get('syncQ', []); q.push(o); store.set('syncQ', q); syncSoon(); }
 }
 function syncSeed() {   // beim Verbinden: was schon auf dem iPad steht, ins Daten-Skript übernehmen
   var q = store.get('syncQ', []), today = parts(Date.now()).key, d = dinners();
   notes().slice().reverse().forEach(function (x) { q.push({ op: 'add', id: x.id, text: x.text }); if (x.done) q.push({ op: 'toggle', id: x.id, done: true }); });
   Object.keys(d).forEach(function (k) { if (k >= today) q.push({ op: 'dinner', key: k, text: d[k] }); });
+  var pr = profile();
+  Object.keys(pr).forEach(function (w) { Object.keys(pr[w]).forEach(function (f) { q.push({ op: 'profil', who: w, f: f, text: pr[w][f] }); }); });
   store.set('syncQ', q);
 }
 var syncBusy = false, syncTimer = 0;
@@ -657,9 +678,14 @@ function syncNow() {
     .then(function (r) { return r.json(); })
     .then(function (j) {
       if (!j || !j.ok) { S.syncErr = (j && j.error) || 'Fehler'; return; }
-      var rest = store.get('syncQ', []).slice(n), st = { notes: j.notes || [], dinners: j.dinners || {} };
+      var rest = store.get('syncQ', []).slice(n), alt = j.profile === undefined;
+      var st = { notes: j.notes || [], dinners: j.dinners || {}, profile: alt ? profile() : j.profile };
+      if (alt) {   // Daten-Skript noch ohne Personen: Profil-Änderungen aufheben, bis es aktualisiert ist
+        var pq = store.get('profilQ', []).concat(q.slice(0, n).filter(function (o) { return o.op === 'profil'; }));
+        store.set('profilQ', pq.slice(-300));
+      } else if (store.get('profilQ', []).length) { rest = store.get('profilQ', []).concat(rest); store.set('profilQ', []); }
       rest.forEach(function (o) { applyOp(st, o); });   // was während der Anfrage dazukam, bleibt erhalten
-      store.set('syncQ', rest); setNotes(st.notes); store.set('dinners', st.dinners);
+      store.set('syncQ', rest); setNotes(st.notes); store.set('dinners', st.dinners); store.set('profile', st.profile); S.profilAlt = alt;
       S.syncAt = Date.now(); S.syncErr = '';
       if (rest.length) syncSoon();
     }, function () { S.syncErr = 'offline'; retry('sync', syncNow, 60000); })
@@ -830,6 +856,7 @@ function render() {
   renderTV(p);
   renderNotes();
   renderFood(p);
+  renderPeople(p);
 }
 function renderClock() {
   var now = Date.now(), p = parts(now), t = p.h + ':' + pad(p.mi);
@@ -1052,6 +1079,46 @@ function renderTV(p) {
   if (last && last.className === 'tvd') bd.removeChild(last);
 }
 
+/* ----------------------------------------------------------------- Personen-Kacheln */
+var PEOPLE = ['p1', 'p2', 'kind'];
+function alterText(today) {
+  var g = kindGeburt(); if (!g) return '';
+  var a = g.split('-').map(Number), b = today.split('-').map(Number), m = (b[0] - a[0]) * 12 + (b[1] - a[1]) - (b[2] < a[2] ? 1 : 0);
+  if (m < 0) return '';
+  return m < 24 ? m + ' Monate' : Math.floor(m / 12) + ' J.' + (m % 12 ? ' ' + (m % 12) + ' M.' : '');
+}
+function profilFelder(w) { return CONFIG.PROFIL_FELDER[w === 'kind' ? 'kind' : 'erwachsen']; }
+function renderPeople(p) {
+  var all = personen(), pr = profile();
+  $('people').innerHTML = PEOPLE.map(function (w) {
+    var pp = all[w], d = pr[w] || {}, info = [];
+    if (w === 'kind') { var al = alterText(p.key); if (al) info.push(al); if (d.kleid) info.push('Gr. ' + d.kleid); if (d.schuhe) info.push('Schuhe ' + d.schuhe); }
+    else { if (d.oben) info.push(d.oben); if (d.hose) info.push('Hose ' + d.hose); if (d.schuhe) info.push('Schuhe ' + d.schuhe); }
+    return '<div class="pt tap" data-act="person" data-who="' + w + '" style="--a: ' + rgb(pp.farbe) + '">' +
+      '<b class="ell">' + esc(pp.name) + '</b><small class="ell">' + esc(info.join(' · ') || 'Größen eintragen') + '</small></div>';
+  }).join('');
+}
+function personDialog(w) {
+  var pp = personen()[w], d = profile()[w] || {}, felder = profilFelder(w), al = w === 'kind' ? alterText(parts(Date.now()).key) : '';
+  openDlg('<h3>' + esc(pp.name) + '</h3><p>' + (al ? al + ' · ' : '') + 'Nur auf diesem iPad und im Daten-Skript gespeichert' + (dataLink() ? ', auch am Handy sichtbar.' : '.') +
+    (S.profilAlt ? '<br><b style="color: #FBBF24">Das Daten-Skript ist noch nicht aktualisiert – am Handy erscheint es erst danach.</b>' : '') + '</p>' +
+    felder.map(function (f) {
+      var lang = f[0] === 'wuensche' || f[0] === 'notiz' || f[0] === 'allergien';
+      return '<label>' + esc(f[1]) + '</label>' + (lang ? '<textarea data-f="' + f[0] + '" style="min-height: 64px">' + esc(d[f[0]] || '') + '</textarea>'
+        : '<input data-f="' + f[0] + '" value="' + esc(d[f[0]] || '') + '" autocomplete="off">');
+    }).join('') +
+    '<div class="btns"><button class="main" id="pOk">Speichern</button><button id="pNo">Abbrechen</button></div>',
+  function () {
+    $('pNo').onclick = closeDlg;
+    $('pOk').onclick = function () {
+      Array.prototype.forEach.call(document.querySelectorAll('#dlg [data-f]'), function (el) {
+        var f = el.getAttribute('data-f'), v = el.value.trim();
+        if (v !== (d[f] || '')) doOp({ op: 'profil', who: w, f: f, text: v });
+      });
+      closeDlg();
+    };
+  });
+}
 function renderNotes() {
   var n = notes(), open = n.filter(function (x) { return !x.done; }), done = n.filter(function (x) { return x.done; }), list = open.concat(done);
   var max = list.length > 5 ? 4 : 5;
@@ -1385,6 +1452,7 @@ function settingsDialog() {
         if (newOrt !== undefined) { if (newOrt) SET.ort = newOrt; else delete SET.ort; }
         store.set('settings', SET); S.fuel = null; S.fuelAt = 0; S.calErr = ''; S.syncErr = ''; S.syncAt = 0;
         if (neu) syncSeed();
+        PEOPLE.forEach(function (w) { var nn = (v.namen && v.namen[w]) || ''; if (nn !== ((profile()[w] || {}).name || '')) doOp({ op: 'profil', who: w, f: 'name', text: nn }); });
         S.tr = null; S.trAt = 0; S.trErr = '';
         closeDlg(); loadCalendar(); loadFuel(); loadWeather(); syncNow(); loadTraffic();
       }
@@ -1420,6 +1488,7 @@ document.addEventListener('click', function (ev) {
   else if (a === 'dinner') editDinner(t.getAttribute('data-key'));
   else if (a === 'muell-done') { var md = store.get('muellDone', {}); md[t.getAttribute('data-key')] = true; store.set('muellDone', md); render(); }
   else if (a === 'settings') settingsDialog();
+  else if (a === 'person') personDialog(t.getAttribute('data-who'));
   else if (a === 'peek') { S.peekUntil = Date.now() + 45000; S.nightUntil = 0; render(); setTimeout(render, 45500); }
 });
 
