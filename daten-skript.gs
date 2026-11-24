@@ -3,6 +3,9 @@
    Teilt Notizzettel, Essensplan und Personen (Größen, Geschenkideen …) zwischen iPad-Board und Handy (handy.html).
    Die Daten liegen in den Skript-Eigenschaften eures Google-Kontos, nicht im Repo.
    Die Termine kommen weiter aus eurem eigenen Kalender-Skript (Kalender-Link im Zahnrad).
+   Unterwegs-Signal: Ein iPhone-Kurzbefehl ruft beim Losfahren den Daten-Link mit
+   &a=unterwegs&wer=NAME&ziel=heim (oder ziel=arbeit) auf, beim Ankommen mit ziel=da.
+   Das Board zeigt dann „NAME unterwegs · Ankunft ca. …“. Es wird KEIN Standort gespeichert.
    Verkehr: berechnet die Fahrzeit mit aktueller Verkehrslage über Google Maps.
    Start und Ziel schickt das Board mit (am iPad eingetragen, nicht im Repo).
    Dieses Skript hat KEINEN Zugriff auf Kalender, Mails oder Dateien.
@@ -75,7 +78,8 @@ function aufraeumen_(st) {   // Erledigtes nach 12 Stunden, Essen nach 14 Tagen,
 
 function antwort_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function erlaubt_(e) { var k = P.getProperty('KEY'); return !!k && !!e && !!e.parameter && e.parameter.k === k; }
-function stand_(st) { return { ok: true, rev: st.rev, notes: st.notes, dinners: st.dinners, profile: st.profile || {} }; }
+function unterwegs_() { try { return JSON.parse(P.getProperty('UNTERWEGS') || 'null'); } catch (e) { return null; } }
+function stand_(st) { return { ok: true, rev: st.rev, notes: st.notes, dinners: st.dinners, profile: st.profile || {}, unterwegs: unterwegs_() }; }
 
 /* ---------- Verkehr (Google Maps, mit aktueller Verkehrslage) */
 function strecke_(a, b) {
@@ -100,6 +104,13 @@ function verkehrTest() {   // im Editor ausführen: prüft die Abfrage (Start/Zi
 
 function doGet(e) {
   if (!erlaubt_(e)) return antwort_({ ok: false, error: 'Schlüssel falsch' });
+  if (e.parameter.a === 'unterwegs') {   // vom iPhone-Kurzbefehl
+    var z = String(e.parameter.ziel || 'heim').toLowerCase();
+    if (!/^(heim|arbeit|da)$/.test(z)) z = 'heim';
+    var u = { wer: String(e.parameter.wer || '').trim().slice(0, 30), ziel: z, seit: Date.now() };
+    P.setProperty('UNTERWEGS', JSON.stringify(u));
+    return antwort_({ ok: true, gespeichert: u });
+  }
   if (e.parameter.a === 'verkehr') {
     var von = String(e.parameter.von || '').slice(0, 150), nach = String(e.parameter.nach || '').slice(0, 150);
     if (!von || !nach) return antwort_({ ok: false, error: 'Start oder Ziel fehlt' });

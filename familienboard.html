@@ -589,6 +589,14 @@ function loadTraffic() {
       render();
     }, function () { S.trErr = 'offline'; render(); retry('tr', loadTraffic, 2 * 60000); });
 }
+function unterwegs() {   // vom iPhone-Kurzbefehl: { wer, ziel: heim|arbeit|da, seit }
+  var u = store.get('unterwegs', null);
+  if (!u || u.ziel === 'da' || !u.seit || Date.now() - u.seit > 3 * 3600e3) return null;
+  var all = personen(), w = String(u.wer || '').toLowerCase(), key = all[w] ? w : null;
+  Object.keys(all).forEach(function (k) { if (!key && w && all[k].name.toLowerCase().split(/\s+/)[0] === w.split(/\s+/)[0]) key = k; });
+  var r = S.tr && !S.trDemo ? (u.ziel === 'heim' ? S.tr.rueck : S.tr.hin) : null;
+  return { key: key, name: key ? all[key].name : (u.wer || 'Jemand'), heim: u.ziel === 'heim', seit: u.seit, an: r ? u.seit + r.min * 60000 : 0 };
+}
 function demoTraffic() { return { hin: { min: 41, normal: 34, km: 45, via: 'Autobahn' }, rueck: { min: 36, normal: 35, km: 45, via: 'Autobahn' } }; }
 function restoreCache() {   // letzte gute Daten, damit das Board nach einem Neustart ohne WLAN nicht leer ist
   var now = Date.now(), c = store.get('cacheWx', null);
@@ -686,6 +694,7 @@ function syncNow() {
       } else if (store.get('profilQ', []).length) { rest = store.get('profilQ', []).concat(rest); store.set('profilQ', []); }
       rest.forEach(function (o) { applyOp(st, o); });   // was während der Anfrage dazukam, bleibt erhalten
       store.set('syncQ', rest); setNotes(st.notes); store.set('dinners', st.dinners); store.set('profile', st.profile); S.profilAlt = alt;
+      if (j.unterwegs !== undefined) store.set('unterwegs', j.unterwegs);
       S.syncAt = Date.now(); S.syncErr = '';
       if (rest.length) syncSoon();
     }, function () { S.syncErr = 'offline'; retry('sync', syncNow, 60000); })
@@ -1023,9 +1032,16 @@ function renderTraffic(p) {
   if (!t) { el.innerHTML = head + '<div class="bd muted" style="font-size: 14px">' + (w.nach ? 'Wird geladen …' : 'Start und Ziel im Zahnrad unter „Verkehr“ eintragen (braucht den Daten-Link).') + '</div>'; return; }
   var von = kurzOrt(w.von) || 'Start', nach = kurzOrt(w.nach) || 'Ziel', nachm = p.min >= 12 * 60;
   var a = { r: t.hin, l: von + ' → ' + nach }, b = { r: t.rueck, l: nach + ' → ' + von };
+  var uw = unterwegs(); if (uw) nachm = uw.heim;
   var first = nachm ? b : a, second = nachm ? a : b;
   function lage(r) { var d = Math.max(0, r.min - r.normal); return { d: d, c: d <= 3 ? '#4ADE80' : d <= 10 ? '#FBBF24' : '#F87171', t: d <= 3 ? 'frei' : d <= 10 ? 'zähflüssig' : 'Stau' }; }
   var html = '';
+  if (uw) {
+    var rest = uw.an ? Math.round((uw.an - Date.now()) / 60000) : null;
+    html += '<div class="row" style="gap: 8px; padding: 5px 9px; margin-bottom: 6px; border-radius: 9px; background: rgba(251, 146, 60, .18); border: 1px solid rgba(251, 146, 60, .55); font-size: 14px">' +
+      svg('auto', '#FB923C', 18) + '<span class="grow ell"><b>' + esc(uw.name) + '</b> unterwegs ' + (uw.heim ? 'nach Hause' : 'zur Arbeit') + ' · seit ' + hm(uw.seit) + '</span>' +
+      (uw.an ? '<b class="rj" style="font-size: 17px; color: #FB923C">' + (rest <= 2 ? 'gleich da' : 'ca. ' + hm(uw.an)) + '</b>' : '') + '</div>';
+  }
   if (first.r) {
     var z = lage(first.r), an = hm(Date.now() + first.r.min * 60000);
     html += '<div class="muted rj" style="font-size: 13px; letter-spacing: .12em; text-transform: uppercase">' + esc(first.l) + '</div>' +
@@ -1094,6 +1110,7 @@ function renderPeople(p) {
     var pp = all[w], d = pr[w] || {}, info = [];
     if (w === 'kind') { var al = alterText(p.key); if (al) info.push(al); if (d.kleid) info.push('Gr. ' + d.kleid); if (d.schuhe) info.push('Schuhe ' + d.schuhe); }
     else { if (d.oben) info.push(d.oben); if (d.hose) info.push('Hose ' + d.hose); if (d.schuhe) info.push('Schuhe ' + d.schuhe); }
+    var uw = unterwegs(); if (uw && uw.key === w) info = ['unterwegs' + (uw.an ? ' · ' + hm(uw.an) : '')];
     return '<div class="pt tap" data-act="person" data-who="' + w + '" style="--a: ' + rgb(pp.farbe) + '">' +
       '<b class="ell">' + esc(pp.name) + '</b><small class="ell">' + esc(info.join(' · ') || 'Größen eintragen') + '</small></div>';
   }).join('');
